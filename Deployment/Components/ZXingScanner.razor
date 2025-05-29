@@ -2,13 +2,20 @@
 @implements IAsyncDisposable
 
 <div class="video-container">
-    <video id="zxing-video" autoplay playsinline></video>
+    <video id="zxing-video" autoplay playsinline style="@(UseBackupScanner ? "display: none;" : "")"></video>
+    <video id="backup-video" autoplay playsinline style="@(!UseBackupScanner ? "display: none;" : "")"></video>
     <canvas id="zxing-canvas" style="display: none;"></canvas>
-    <div class="scan-overlay"></div>
+    <canvas id="backup-canvas" style="display: none;"></canvas>
+    <div class="scan-overlay">
+        <div class="scan-frame"></div>
+        <div class="scan-line"></div>
+    </div>
 </div>
 
 @code {
-    private IJSObjectReference? scannerModule;
+    private IJSObjectReference? zxingModule;
+    private IJSObjectReference? backupModule;
+    private bool UseBackupScanner = false;
 
     [Parameter]
     public EventCallback<string> OnCodeDetected { get; set; }
@@ -17,11 +24,45 @@
     {
         if (firstRender)
         {
-            scannerModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+            await InitializeScanner();
+        }
+    }
+
+    private async Task InitializeScanner()
+    {
+        try {
+            // Try ZXing first
+            zxingModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
                 "import", "./js/zxingScanner.js");
 
-            await scannerModule.InvokeVoidAsync("startZXingScanner",
+            await zxingModule.InvokeVoidAsync("startZXingScanner",
                 DotNetObjectReference.Create(this));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ZXing failed: {ex.Message}");
+            await TryBackupScanner();
+        }
+    }
+
+    private async Task TryBackupScanner()
+    {
+        try {
+            backupModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                "import", "./js/backupScanner.js");
+
+            bool success = await backupModule.InvokeAsync<bool>("startBackupScanner",
+                DotNetObjectReference.Create(this));
+
+            if (success)
+            {
+                UseBackupScanner = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Backup scanner failed: {ex.Message}");
         }
     }
 
@@ -33,10 +74,22 @@
 
     public async ValueTask DisposeAsync()
     {
-        if (scannerModule != null)
+        if (zxingModule != null)
         {
-            await scannerModule.InvokeVoidAsync("stopZXingScanner");
-            await scannerModule.DisposeAsync();
+            try {
+                await zxingModule.InvokeVoidAsync("stopZXingScanner");
+                await zxingModule.DisposeAsync();
+            }
+            catch { }
+        }
+
+        if (backupModule != null)
+        {
+            try {
+                await backupModule.InvokeVoidAsync("stopBackupScanner");
+                await backupModule.DisposeAsync();
+            }
+            catch { }
         }
     }
 }
