@@ -1,0 +1,42 @@
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<div class="video-container">
+    <video id="zxing-video" autoplay playsinline></video>
+    <canvas id="zxing-canvas" style="display: none;"></canvas>
+    <div class="scan-overlay"></div>
+</div>
+
+@code {
+    private IJSObjectReference? scannerModule;
+
+    [Parameter]
+    public EventCallback<string> OnCodeDetected { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            scannerModule = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                "import", "./js/zxingScanner.js");
+
+            await scannerModule.InvokeVoidAsync("startZXingScanner",
+                DotNetObjectReference.Create(this));
+        }
+    }
+
+    [JSInvokable("OnQRCodeDetected")]
+    public async Task OnQRCodeDetected(string result)
+    {
+        await OnCodeDetected.InvokeAsync(result);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (scannerModule != null)
+        {
+            await scannerModule.InvokeVoidAsync("stopZXingScanner");
+            await scannerModule.DisposeAsync();
+        }
+    }
+}

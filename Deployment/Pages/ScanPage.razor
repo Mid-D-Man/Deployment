@@ -1,0 +1,89 @@
+@page "/scan"
+@using Deployment.Components
+@inject IJSRuntime JSRuntime
+
+<div class="scan-attendance-page">
+    <div class="scan-header">
+        <h3>Scan QR Code</h3>
+        <p>Scan the QR code to capture data</p>
+    </div>
+    
+    <div class="scan-container">
+        <ZXingScanner OnCodeDetected="HandleScanResult" />
+    </div>
+    
+    <div class="scan-history">
+        <h4>Recent Scans</h4>
+        @if (recentScans.Count > 0)
+        {
+            <div class="scan-list">
+                @foreach (var scan in recentScans)
+                {
+                    <div class="scan-item @(scan.IsSuccessful ? "success" : "error")">
+                        <div class="scan-info">
+                            <span class="scan-time">@scan.ScanTime.ToString("HH:mm:ss")</span>
+                            <span class="scan-data">@GetDisplayText(scan.Data)</span>
+                        </div>
+                        <span class="scan-status-icon">
+                            @if (scan.IsSuccessful)
+                            {
+                                <span>✓</span>
+                            }
+                            else
+                            {
+                                <span>✗</span>
+                            }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="no-scans">No recent scans</div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<ScanRecord> recentScans = new List<ScanRecord>();
+    
+    private void HandleScanResult(string result)
+    {
+        AddScanRecord(result, !string.IsNullOrEmpty(result));
+    }
+    
+    private void AddScanRecord(string data, bool isSuccessful)
+    {
+        var scanRecord = new ScanRecord
+        {
+            Data = data ?? "Invalid code",
+            ScanTime = DateTime.Now,
+            IsSuccessful = isSuccessful
+        };
+        
+        recentScans.Insert(0, scanRecord);
+        
+        if (recentScans.Count > 5)
+        {
+            recentScans.RemoveAt(recentScans.Count - 1);
+        }
+        
+        StateHasChanged();
+    }
+    
+    private string GetDisplayText(string data)
+    {
+        if (string.IsNullOrEmpty(data))
+            return "Invalid code";
+        
+        return data.Length > 30 ? data.Substring(0, 27) + "..." : data;
+    }
+    
+    private class ScanRecord
+    {
+        public string Data { get; set; } = "";
+        public DateTime ScanTime { get; set; }
+        public bool IsSuccessful { get; set; }
+    }
+}
