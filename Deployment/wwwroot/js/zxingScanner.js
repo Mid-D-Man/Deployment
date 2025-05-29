@@ -3,6 +3,7 @@ let canvasElem = null;
 let stream = null;
 let scanning = false;
 let animationFrame;
+let codeReader = null;
 
 export async function startZXingScanner(dotNetHelper) {
     videoElem = document.getElementById("zxing-video");
@@ -20,6 +21,9 @@ export async function startZXingScanner(dotNetHelper) {
         videoElem.srcObject = stream;
         videoElem.setAttribute("playsinline", true);
         await videoElem.play();
+
+        // Initialize the code reader once
+        codeReader = new ZXing.BrowserQRCodeReader();
         scanning = true;
         tick(dotNetHelper);
     } catch (err) {
@@ -28,26 +32,25 @@ export async function startZXingScanner(dotNetHelper) {
 }
 
 function tick(dotNetHelper) {
-    if (!scanning) return;
+    if (!scanning || !codeReader) return;
+
     if (videoElem.readyState === videoElem.HAVE_ENOUGH_DATA) {
         canvasElem.width = videoElem.videoWidth;
         canvasElem.height = videoElem.videoHeight;
-        let context = canvasElem.getContext("2d");
+        let context = canvasElem.getContext("2d", { willReadFrequently: true });
         context.drawImage(videoElem, 0, 0, canvasElem.width, canvasElem.height);
 
         let imageData = context.getImageData(0, 0, canvasElem.width, canvasElem.height);
 
         try {
-            const codeReader = new ZXing.BrowserQRCodeReader();
-            codeReader.decodeFromImageData(imageData)
-                .then(result => {
-                    dotNetHelper.invokeMethodAsync("OnQRCodeDetected", result.text);
-                })
-                .catch(err => {
-                    // No QR code found, continue scanning
-                });
+            // Use decodeFromCanvas or create ImageData compatible format
+            const result = codeReader.decodeFromCanvas(canvasElem);
+            if (result) {
+                dotNetHelper.invokeMethodAsync("OnQRCodeDetected", result.text);
+                return; // Stop scanning after successful decode
+            }
         } catch (ex) {
-            console.error("Error during ZXing scanning", ex);
+            // No QR code found or other error, continue scanning
         }
     }
     animationFrame = requestAnimationFrame(() => tick(dotNetHelper));
@@ -55,8 +58,13 @@ function tick(dotNetHelper) {
 
 export function stopZXingScanner() {
     scanning = false;
-    cancelAnimationFrame(animationFrame);
+    if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+    }
     if (stream) {
         stream.getTracks().forEach(track => track.stop());
+    }
+    if (codeReader) {
+        codeReader.reset();
     }
 }
