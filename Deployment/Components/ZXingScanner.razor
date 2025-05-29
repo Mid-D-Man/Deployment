@@ -7,18 +7,18 @@
             @(UseBackupScanner ? "Switch to ZXing" : "Switch to Backup")
         </button>
     </div>
-
+    
     <div class="video-container">
         <video id="zxing-video" autoplay playsinline style="@(UseBackupScanner ? "display: none;" : "")"></video>
         <video id="backup-video" autoplay playsinline style="@(!UseBackupScanner ? "display: none;" : "")"></video>
         <canvas id="zxing-canvas" style="display: none;"></canvas>
         <canvas id="backup-canvas" style="display: none;"></canvas>
-
+        
         <div class="scan-overlay @(showSuccessAnimation ? "scan-success" : "")">
             <div class="scan-frame"></div>
             <div class="scan-line"></div>
         </div>
-
+        
         <div class="scanner-status">
             @(UseBackupScanner ? "Backup Scanner" : "ZXing Scanner")
         </div>
@@ -28,152 +28,155 @@
 <!-- QR Code Detection Popup -->
 @if (showPopup)
 {
-<div class="qr-popup-overlay" @onclick="ClosePopup">
-    <div class="qr-popup" @onclick:stopPropagation="true">
-        <div class="qr-popup-header">
-            <h3>QR Code Detected!</h3>
-            <button class="qr-popup-close" @onclick="ClosePopup">&times;</button>
-        </div>
-        <div class="qr-popup-content">
-            <div class="qr-success-icon">✓</div>
-            <p class="qr-result">@lastDetectedCode</p>
-            <div class="qr-popup-actions">
-                <button class="qr-btn qr-btn-primary" @onclick="CopyToClipboard">Copy</button>
-                <button class="qr-btn qr-btn-secondary" @onclick="ClosePopup">Close</button>
+    <div class="qr-popup-overlay" @onclick="ClosePopup">
+        <div class="qr-popup" @onclick:stopPropagation="true">
+            <div class="qr-popup-header">
+                <h3>QR Code Detected!</h3>
+                <button class="qr-popup-close" @onclick="ClosePopup">&times;</button>
+            </div>
+            <div class="qr-popup-content">
+                <div class="qr-success-icon">✓</div>
+                <p class="qr-result">@lastDetectedCode</p>
+                <div class="qr-popup-actions">
+                    <button class="qr-btn qr-btn-primary" @onclick="CopyToClipboard">Copy</button>
+                    <button class="qr-btn qr-btn-secondary" @onclick="ClosePopup">Close</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
 }
+
 
 @code {
-private IJSObjectReference? zxingModule;
-private IJSObjectReference? backupModule;
-private bool UseBackupScanner = false;
-private bool showPopup = false;
-private bool showSuccessAnimation = false;
-private string lastDetectedCode = "";
+    private IJSObjectReference? zxingModule;
+    private IJSObjectReference? backupModule;
+    private bool UseBackupScanner = false;
+    private bool showPopup = false;
+    private bool showSuccessAnimation = false;
+    private string lastDetectedCode = "";
 
-[Parameter]
-public EventCallback<string> OnCodeDetected { get; set; }
+    [Parameter]
+    public EventCallback<string> OnCodeDetected { get; set; }
 
-protected override async Task OnAfterRenderAsync(bool firstRender)
-{
-if (firstRender)
-{
-await InitializeScanner();
-}
-}
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeScanner();
+        }
+    }
 
-private async Task InitializeScanner()
-{
-try {
-await JSRuntime.InvokeVoidAsync("eval", "window.zxingScannerModule = window.zxingScanner;");
-await JSRuntime.InvokeVoidAsync("window.zxingScannerModule.startZXingScanner",
-DotNetObjectReference.Create(this));
-}
-catch (Exception ex)
-{
-Console.WriteLine($"ZXing failed: {ex.Message}");
-await TryBackupScanner();
-}
-}
+    private async Task InitializeScanner()
+    {
+        try {
+            await JSRuntime.InvokeVoidAsync("eval", "window.zxingScannerModule = window.zxingScanner;");
+            await JSRuntime.InvokeVoidAsync("window.zxingScannerModule.startZXingScanner",
+                DotNetObjectReference.Create(this));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ZXing failed: {ex.Message}");
+            await TryBackupScanner();
+        }
+    }
 
-private async Task TryBackupScanner()
-{
-try {
-await JSRuntime.InvokeVoidAsync("eval", "window.backupScannerModule = window.backupScanner;");
-bool success = await JSRuntime.InvokeAsync<bool>("window.backupScannerModule.startBackupScanner",
-DotNetObjectReference.Create(this));
+    private async Task TryBackupScanner()
+    {
+        try {
+            await JSRuntime.InvokeVoidAsync("eval", "window.backupScannerModule = window.backupScanner;");
+            bool success = await JSRuntime.InvokeAsync<bool>("window.backupScannerModule.startBackupScanner",
+                DotNetObjectReference.Create(this));
 
-if (success)
-{
-UseBackupScanner = true;
-StateHasChanged();
-}
-}
-catch (Exception ex)
-{
-Console.WriteLine($"Backup scanner failed: {ex.Message}");
-}
-}
+            if (success)
+            {
+                UseBackupScanner = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Backup scanner failed: {ex.Message}");
+        }
+    }
 
-private async Task ToggleScanner()
-{
-try {
-// Stop current scanner
-if (UseBackupScanner)
-{
-await JSRuntime.InvokeVoidAsync("window.backupScannerModule?.stopBackupScanner");
-}
-else
-{
-await JSRuntime.InvokeVoidAsync("window.zxingScannerModule?.stopZXingScanner");
-}
+    private async Task ToggleScanner()
+    {
+        try {
+            // Stop current scanner
+            if (UseBackupScanner)
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "window.backupScanner?.stopBackupScanner?.()");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "window.zxingScanner?.stopZXingScanner?.()");
+            }
 
-// Switch scanner
-UseBackupScanner = !UseBackupScanner;
-StateHasChanged();
+            // Switch scanner
+            UseBackupScanner = !UseBackupScanner;
+            StateHasChanged();
 
-// Start new scanner
-if (UseBackupScanner)
-{
-await JSRuntime.InvokeVoidAsync("window.backupScannerModule.startBackupScanner",
-DotNetObjectReference.Create(this));
-}
-else
-{
-await JSRuntime.InvokeVoidAsync("window.zxingScannerModule.startZXingScanner",
-DotNetObjectReference.Create(this));
-}
-}
-catch (Exception ex)
-{
-Console.WriteLine($"Scanner toggle failed: {ex.Message}");
-}
-}
+            // Start new scanner
+            if (UseBackupScanner)
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "window.backupScannerModule = window.backupScanner;");
+                await JSRuntime.InvokeAsync<bool>("window.backupScannerModule.startBackupScanner",
+                    DotNetObjectReference.Create(this));
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "window.zxingScannerModule = window.zxingScanner;");
+                await JSRuntime.InvokeVoidAsync("window.zxingScannerModule.startZXingScanner",
+                    DotNetObjectReference.Create(this));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Scanner toggle failed: {ex.Message}");
+        }
+    }
 
-[JSInvokable("OnQRCodeDetected")]
-public async Task OnQRCodeDetected(string result)
-{
-lastDetectedCode = result;
-showSuccessAnimation = true;
-showPopup = true;
-StateHasChanged();
+    [JSInvokable("OnQRCodeDetected")]
+    public async Task OnQRCodeDetected(string result)
+    {
+        lastDetectedCode = result;
+        showSuccessAnimation = true;
+        showPopup = true;
+        StateHasChanged();
 
-// Reset success animation after a short delay
-await Task.Delay(500);
-showSuccessAnimation = false;
-StateHasChanged();
+        // Reset success animation after a short delay
+        await Task.Delay(500);
+        showSuccessAnimation = false;
+        StateHasChanged();
 
-await OnCodeDetected.InvokeAsync(result);
-}
+        await OnCodeDetected.InvokeAsync(result);
+    }
 
-private void ClosePopup()
-{
-showPopup = false;
-StateHasChanged();
-}
+    private void ClosePopup()
+    {
+        showPopup = false;
+        StateHasChanged();
+    }
 
-private async Task CopyToClipboard()
-{
-try {
-await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", lastDetectedCode);
-ClosePopup();
-}
-catch {
-// Fallback for older browsers
-await JSRuntime.InvokeVoidAsync("eval", $"const el = document.createElement('textarea'); el.value = '{lastDetectedCode}'; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);");
-ClosePopup();
-}
-}
+    private async Task CopyToClipboard()
+    {
+        try {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", lastDetectedCode);
+            ClosePopup();
+        }
+        catch {
+            // Fallback for older browsers
+            await JSRuntime.InvokeVoidAsync("eval", $"const el = document.createElement('textarea'); el.value = '{lastDetectedCode}'; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);");
+            ClosePopup();
+        }
+    }
 
-public async ValueTask DisposeAsync()
-{
-try {
-await JSRuntime.InvokeVoidAsync("window.zxingScannerModule?.stopZXingScanner");
-await JSRuntime.InvokeVoidAsync("window.backupScannerModule?.stopBackupScanner");
-}
-catch { }
-}
+    public async ValueTask DisposeAsync()
+    {
+        try {
+            await JSRuntime.InvokeVoidAsync("eval", "window.zxingScanner?.stopZXingScanner?.()");
+            await JSRuntime.InvokeVoidAsync("eval", "window.backupScanner?.stopBackupScanner?.()");
+        }
+        catch { }
+    }
 }
