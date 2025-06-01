@@ -36,55 +36,42 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Publish
-        run: dotnet publish --configuration Release --no-build --output publish
+        run: dotnet publish --configuration Release --no-build --output ./dist
 
-      - name: Configure for GitHub Pages
+      - name: Prepare GitHub Pages content
         run: |
-          # Debug: Show the complete publish structure
-          echo "=== Complete publish directory structure ==="
-          find publish -type f | head -20
+          # Create the pages directory
+          mkdir -p ./pages
           
-          echo "=== Looking for ZXing files specifically ==="
-          find publish -name "*zxing*" -type f
-          find publish -path "*ZXingBlazor*" -type f
+          # Copy wwwroot contents
+          cp -r ./dist/wwwroot/* ./pages/
           
-          echo "=== Contents of publish directory ==="
-          ls -la publish/
-          
-          echo "=== Contents of publish/wwwroot ==="
-          ls -la publish/wwwroot/ || echo "wwwroot doesn't exist"
-          
-          # Check if _content exists at different levels
-          if [ -d "publish/_content" ]; then
-            echo "=== Found _content at publish/_content ==="
-            find publish/_content -name "*zxing*" -type f
-            # Copy to wwwroot
-            mkdir -p publish/wwwroot/_content
-            cp -r publish/_content/* publish/wwwroot/_content/
-          fi
-          
-          if [ -d "publish/wwwroot/_content" ]; then
-            echo "=== Found _content at publish/wwwroot/_content ==="
-            find publish/wwwroot/_content -name "*zxing*" -type f
+          # Copy _content if it exists at the root level
+          if [ -d "./dist/_content" ]; then
+            mkdir -p ./pages/_content
+            cp -r ./dist/_content/* ./pages/_content/
           fi
           
           # Add .nojekyll to prevent Jekyll processing
-          touch publish/wwwroot/.nojekyll
+          touch ./pages/.nojekyll
           
           # Create 404.html for SPA routing
-          cp publish/wwwroot/index.html publish/wwwroot/404.html
+          cp ./pages/index.html ./pages/404.html
           
           # Update base href for GitHub Pages subpath
-          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' publish/wwwroot/index.html
-          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' publish/wwwroot/404.html
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
           
-          echo "=== Final wwwroot structure ==="
-          find publish/wwwroot -type f | head -20
+          # Debug: List structure
+          echo "Pages directory structure:"
+          find ./pages -name "*.js" | grep -i zxing | head -5
+          echo "Looking for _content:"
+          find ./pages -path "*/_content/*" -name "*.js" | head -5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: publish/wwwroot
+          path: ./pages
 
   deploy:
     if: github.ref == 'refs/heads/master'
