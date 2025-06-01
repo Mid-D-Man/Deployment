@@ -1,94 +1,25 @@
 @page "/scan"
-@using Microsoft.JSInterop
-@inject QrScannerService QrScanner
-@inject IJSRuntime JSRuntime
-@implements IAsyncDisposable
-
+@inject IJSRuntime JS
+@using ReactorBlazorQRCodeScanner
 <div class="qr-scanner-container">
-    <input type="file" @ref="fileInput" accept="image/*" @onchange="HandleFileSelection" />
-    <canvas @ref="canvasElement" id="@canvasId" style="display: none;"></canvas>
-    
-    @if (!string.IsNullOrEmpty(scanResult))
-    {
-        <div class="scan-result">
-            <strong>QR Code Result:</strong> @scanResult
-        </div>
-    }
-    
-    @if (!string.IsNullOrEmpty(errorMessage))
-    {
-        <div class="error-message">
-            <strong>Error:</strong> @errorMessage
-        </div>
-    }
+  <QRCodeScanner />
 </div>
 
 @code {
-    private ElementReference fileInput;
-    private ElementReference canvasElement;
-    private string canvasId = $"qr-canvas-{Guid.NewGuid():N}";
-    private string? scanResult;
-    private string? errorMessage;
-    private bool isInitialized;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            isInitialized = await QrScanner.InitializeAsync();
-            if (!isInitialized)
-            {
-                errorMessage = "Failed to initialize QR scanner";
-                StateHasChanged();
-            }
-        }
-    }
+  private QRCodeScannerJsInterop? _qrCodeScannerJsInterop;
+  private Action<string>? _onQrCodeScanAction; 
 
-    private async Task HandleFileSelection(ChangeEventArgs e)
-    {
-        if (!isInitialized) return;
+  protected override async Task OnInitializedAsync()
+  {
+    _onQrCodeScanAction = (code) => OnQrCodeScan(code);  
 
-        try
-        {
-            errorMessage = null;
-            scanResult = null;
+    _qrCodeScannerJsInterop = new QRCodeScannerJsInterop(JS);
+    await _qrCodeScannerJsInterop.Init(_onQrCodeScanAction);
+  }
 
-            await JSRuntime.InvokeVoidAsync("eval", $@"
-                const fileInput = document.querySelector('#{canvasId}').previousElementSibling;
-                const file = fileInput.files[0];
-                if (!file) return;
-
-                const img = new Image();
-                img.onload = function() {{
-                    const canvas = document.getElementById('{canvasId}');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
-                }};
-                img.src = URL.createObjectURL(file);
-            ");
-
-            // Small delay to ensure image is drawn
-            await Task.Delay(100);
-            
-            scanResult = await QrScanner.ScanFromCanvasAsync(canvasId);
-            
-            if (string.IsNullOrEmpty(scanResult))
-            {
-                errorMessage = "No QR code detected in the image";
-            }
-        }
-        catch (Exception ex)
-        {
-            errorMessage = $"Scanning error: {ex.Message}";
-        }
-
-        StateHasChanged();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await QrScanner.DisposeAsync();
-    }
+  private static void OnQrCodeScan(string code)
+  {
+    Console.WriteLine($"OnQrCodeScan {code}");
+  }
 }
