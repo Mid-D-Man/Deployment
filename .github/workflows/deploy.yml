@@ -34,53 +34,29 @@ jobs:
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
-      
-      # Publish specifically targeting the Blazor WASM project
+
       - name: Publish Blazor WASM
         run: |
-          # Find the main project file (assuming it's in Deployment folder based on your structure)
           if [ -f "Deployment/Deployment.csproj" ]; then
             echo "Publishing Deployment/Deployment.csproj"
             dotnet publish Deployment/Deployment.csproj --configuration Release --no-build --output ./dist
           else
-            # Fallback to any .csproj that looks like a Blazor WASM project
             echo "Looking for Blazor WASM project..."
             find . -name "*.csproj" -exec grep -l "Microsoft.AspNetCore.Components.WebAssembly" {} \; | head -1 | xargs -I {} dotnet publish {} --configuration Release --no-build --output ./dist
           fi
 
       - name: Prepare for GitHub Pages
         run: |
-          echo "=== Checking publish output structure ==="
-          find ./dist -type f | head -20
-          
-          echo "=== Looking for ZXing files ==="
-          find ./dist -name "*zxing*" -type f
-          find ./dist -path "*ZXingBlazor*" -type f
-          
-          # The correct structure should have wwwroot with _content inside it
-          if [ -d "./dist/wwwroot" ]; then
-            echo "=== Found wwwroot, checking its contents ==="
-            ls -la ./dist/wwwroot/
-          
-            # Check for _content in wwwroot
-            if [ -d "./dist/wwwroot/_content" ]; then
-              echo "=== _content found in wwwroot ==="
-              find ./dist/wwwroot/_content -name "*zxing*" -type f
-            fi
-          fi
-          
-          # Create final output directory
           mkdir -p ./pages
           
-          # Copy everything from wwwroot
           if [ -d "./dist/wwwroot" ]; then
             cp -r ./dist/wwwroot/* ./pages/
           else
-            echo "ERROR: wwwroot not found in expected location"
+            echo "ERROR: wwwroot not found"
             exit 1
           fi
           
-          # Add .nojekyll to prevent Jekyll processing
+          # Critical: Add .nojekyll to prevent Jekyll processing
           touch ./pages/.nojekyll
           
           # Create 404.html for SPA routing
@@ -90,16 +66,31 @@ jobs:
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
           
-          echo "=== Final pages structure ==="
-          find ./pages -name "*zxing*" -type f
-          echo "=== Checking if ZXing file exists at expected path ==="
+          # Fix MIME type issues by adding web.config for proper JS serving
+          cat > ./pages/web.config << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <system.webServer>
+              <staticContent>
+                <mimeMap fileExtension=".js" mimeType="application/javascript" />
+                <mimeMap fileExtension=".wasm" mimeType="application/wasm" />
+              </staticContent>
+              <httpErrors errorMode="Custom" defaultResponseMode="File">
+                <remove statusCode="404" />
+                <error statusCode="404" path="404.html" />
+              </httpErrors>
+            </system.webServer>
+          </configuration>
+          EOF
+          
+          # Verify ZXing files are properly copied
+          echo "=== Verifying ZXing deployment ==="
           if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
-            echo "✅ ZXing file found at correct location"
-            ls -la "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js"
+            echo "✅ ZXing JS file found"
+            file ./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js
           else
-            echo "❌ ZXing file NOT found at expected location"
-            echo "Available _content structure:"
-            find ./pages/_content -type f 2>/dev/null | head -10 || echo "No _content directory found"
+            echo "❌ ZXing JS file missing"
+            find ./pages -name "*.js" | grep -i zxing || echo "No ZXing JS files found"
           fi
 
       - name: Upload Pages artifact
