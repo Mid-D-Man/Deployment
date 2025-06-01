@@ -81,8 +81,13 @@
             try
             {
                 jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/qrCodeScanner.js");
+            
+                // Initialize the WASM module first
                 await jsModule.InvokeVoidAsync("default");
-                scanner = await jsModule.InvokeAsync<IJSObjectReference>("QrScanner.new", 128);
+            
+                // Create scanner instance - get the QrScanner class from the module
+                var qrScannerClass = await jsModule.InvokeAsync<IJSObjectReference>("QrScanner");
+                scanner = await qrScannerClass.InvokeAsync<IJSObjectReference>("new", 128);
             }
             catch (Exception ex)
             {
