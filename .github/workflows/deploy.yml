@@ -40,7 +40,7 @@ jobs:
 
       - name: Prepare GitHub Pages content
         run: |
-          # Create the pages directory
+          # Create the pages directory and stff
           mkdir -p ./pages
           
           # Copy wwwroot contents
