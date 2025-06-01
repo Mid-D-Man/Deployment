@@ -1,25 +1,205 @@
 @page "/scan"
 @inject IJSRuntime JS
 @using ReactorBlazorQRCodeScanner
-<div class="qr-scanner-container">
-  <QRCodeScanner />
+
+<div class="scan-page">
+    <div class="scan-header">
+        <h3>QR Code Scanner</h3>
+        <p>Position QR code within the scanning area</p>
+    </div>
+
+    <div class="qr-scanner-container">
+        <QRCodeScanner ShowOutput="false" Width="100%" />
+    </div>
+
+    <div class="scan-controls">
+        @if (isScanning)
+        {
+            <button class="btn btn-secondary" @onclick="StopScanning">
+                Stop Scanner
+            </button>
+        }
+        else
+        {
+            <button class="btn btn-primary" @onclick="StartScanning">
+                Start Scanner
+            </button>
+        }
+    </div>
+
+    @if (showAlert && !string.IsNullOrEmpty(alertMessage))
+    {
+        <div class="alert alert-danger">
+            @alertMessage
+        </div>
+    }
 </div>
 
+<!-- QR Code Result Popup -->
+@if (showPopup)
+{
+    <div class="popup-overlay" @onclick="ClosePopup">
+        <div class="popup-content" @onclick:stopPropagation="true">
+            <div class="popup-header">
+                <h4>QR Code Detected</h4>
+                <button class="popup-close" @onclick="ClosePopup">&times;</button>
+            </div>
+            <div class="popup-body">
+                <div class="qr-result">
+                    <div class="result-label">Scanned Content:</div>
+                    <div class="result-content">@lastScannedCode</div>
+                </div>
+                <div class="scan-timestamp">
+                    Scanned at: @scanTimestamp.ToString("MMM dd, yyyy HH:mm:ss")
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button class="btn btn-primary" @onclick="CopyToClipboard">
+                    Copy Content
+                </button>
+                <button class="btn btn-secondary" @onclick="ClosePopup">
+                    Continue Scanning
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    private QRCodeScannerJsInterop? _qrCodeScannerJsInterop;
+    private Action<string>? _onQrCodeScanAction;
+    private bool showPopup = false;
+    private bool isScanning = true;
+    private string lastScannedCode = string.Empty;
+    private DateTime scanTimestamp;
+    private bool showAlert = false;
+    private string alertMessage = string.Empty;
 
-  private QRCodeScannerJsInterop? _qrCodeScannerJsInterop;
-  private Action<string>? _onQrCodeScanAction; 
+    protected override async Task OnInitializedAsync()
+    {
+        _onQrCodeScanAction = (code) => OnQrCodeScan(code);
+        _qrCodeScannerJsInterop = new QRCodeScannerJsInterop(JS);
+        
+        try
+        {
+            await _qrCodeScannerJsInterop.Init(_onQrCodeScanAction);
+        }
+        catch (Exception ex)
+        {
+            ShowAlert($"Failed to initialize scanner: {ex.Message}");
+        }
+    }
 
-  protected override async Task OnInitializedAsync()
-  {
-    _onQrCodeScanAction = (code) => OnQrCodeScan(code);  
+    private async void OnQrCodeScan(string code)
+    {
+        if (!string.IsNullOrEmpty(code) && !showPopup)
+        {
+            // Stop scanning to prevent multiple detections
+            await PauseScanning();
+            
+            // Update UI with scanned data
+            lastScannedCode = code;
+            scanTimestamp = DateTime.Now;
+            showPopup = true;
+            
+            // Force UI update
+            await InvokeAsync(StateHasChanged);
+            
+            Console.WriteLine($"QR Code Detected: {code}");
+        }
+    }
 
-    _qrCodeScannerJsInterop = new QRCodeScannerJsInterop(JS);
-    await _qrCodeScannerJsInterop.Init(_onQrCodeScanAction);
-  }
+    private async Task ClosePopup()
+    {
+        showPopup = false;
+        await ResumeScanning();
+        StateHasChanged();
+    }
 
-  private static void OnQrCodeScan(string code)
-  {
-    Console.WriteLine($"OnQrCodeScan {code}");
-  }
+    private async Task PauseScanning()
+    {
+        if (_qrCodeScannerJsInterop != null && isScanning)
+        {
+            try
+            {
+                await _qrCodeScannerJsInterop.StopRecording();
+                isScanning = false;
+            }
+            catch (Exception ex)
+            {
+                ShowAlert($"Failed to pause scanner: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ResumeScanning()
+    {
+        if (_qrCodeScannerJsInterop != null && !isScanning)
+        {
+            try
+            {
+                await _qrCodeScannerJsInterop.Init(_onQrCodeScanAction);
+                isScanning = true;
+                HideAlert();
+            }
+            catch (Exception ex)
+            {
+                ShowAlert($"Failed to resume scanner: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task StartScanning()
+    {
+        await ResumeScanning();
+    }
+
+    private async Task StopScanning()
+    {
+        await PauseScanning();
+    }
+
+    private async Task CopyToClipboard()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", lastScannedCode);
+            ShowAlert("Content copied to clipboard!", isError: false);
+        }
+        catch (Exception)
+        {
+            ShowAlert("Failed to copy to clipboard");
+        }
+    }
+
+    private void ShowAlert(string message, bool isError = true)
+    {
+        alertMessage = message;
+        showAlert = true;
+        StateHasChanged();
+
+        // Auto-hide alert after 3 seconds
+        _ = Task.Delay(3000).ContinueWith(_ => HideAlert());
+    }
+
+    private void HideAlert()
+    {
+        showAlert = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_qrCodeScannerJsInterop != null && isScanning)
+        {
+            try
+            {
+                await _qrCodeScannerJsInterop.StopRecording();
+            }
+            catch
+            {
+                // Ignore disposal errors
+            }
+        }
+    }
 }
