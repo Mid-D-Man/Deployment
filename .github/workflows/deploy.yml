@@ -40,6 +40,34 @@ jobs:
 
       - name: Configure for GitHub Pages
         run: |
+          # Debug: Show the complete publish structure
+          echo "=== Complete publish directory structure ==="
+          find publish -type f | head -20
+          
+          echo "=== Looking for ZXing files specifically ==="
+          find publish -name "*zxing*" -type f
+          find publish -path "*ZXingBlazor*" -type f
+          
+          echo "=== Contents of publish directory ==="
+          ls -la publish/
+          
+          echo "=== Contents of publish/wwwroot ==="
+          ls -la publish/wwwroot/ || echo "wwwroot doesn't exist"
+          
+          # Check if _content exists at different levels
+          if [ -d "publish/_content" ]; then
+            echo "=== Found _content at publish/_content ==="
+            find publish/_content -name "*zxing*" -type f
+            # Copy to wwwroot
+            mkdir -p publish/wwwroot/_content
+            cp -r publish/_content/* publish/wwwroot/_content/
+          fi
+          
+          if [ -d "publish/wwwroot/_content" ]; then
+            echo "=== Found _content at publish/wwwroot/_content ==="
+            find publish/wwwroot/_content -name "*zxing*" -type f
+          fi
+          
           # Add .nojekyll to prevent Jekyll processing
           touch publish/wwwroot/.nojekyll
           
@@ -50,14 +78,8 @@ jobs:
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' publish/wwwroot/index.html
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' publish/wwwroot/404.html
           
-          # Ensure _content folder exists and copy all static web assets
-          if [ -d "publish/_content" ]; then
-            cp -r publish/_content publish/wwwroot/
-          fi
-          
-          # List contents for debugging
-          echo "Contents of publish/wwwroot:"
-          find publish/wwwroot -type f -name "*.js" | head -10
+          echo "=== Final wwwroot structure ==="
+          find publish/wwwroot -type f | head -20
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
