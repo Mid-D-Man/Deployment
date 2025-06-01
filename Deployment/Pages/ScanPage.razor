@@ -1,1 +1,245 @@
 @page "/scan"
+@using Microsoft.AspNetCore.Components
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+
+<div class="scan-attendance-page">
+    <div class="scan-header">
+        <h3>QR Code Scanner</h3>
+        <p>Position the QR code within the frame to scan</p>
+    </div>
+
+    <div class="scan-container">
+        <video @ref="videoElement" autoplay playsinline muted></video>
+        <canvas @ref="canvasElement" style="display: none;"></canvas>
+    </div>
+
+    <div class="scan-controls">
+        @if (!isScanning)
+        {
+            <button class="btn btn-primary" @onclick="StartScanning">
+                Start Scanning
+            </button>
+        }
+        else
+        {
+            <button class="btn btn-secondary" @onclick="StopScanning">
+                Stop Scanning
+            </button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-3">
+            @errorMessage
+        </div>
+    }
+
+    <div class="scan-history">
+        <h4>Scan History</h4>
+        @if (scanHistory.Any())
+        {
+            <div class="scan-list">
+                @foreach (var scan in scanHistory.OrderByDescending(s => s.Timestamp))
+                {
+                    <div class="scan-item @(scan.IsSuccess ? "success" : "error")">
+                        <div class="scan-info">
+                            <div class="scan-time">@scan.Timestamp.ToString("HH:mm:ss")</div>
+                            <div class="scan-data">@scan.Data</div>
+                        </div>
+                        <div class="scan-status-icon">
+                            @(scan.IsSuccess ? "✓" : "✗")
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="no-scans">No scans yet</div>
+        }
+    </div>
+</div>
+
+@code {
+    private ElementReference videoElement;
+    private ElementReference canvasElement;
+    private IJSObjectReference? jsModule;
+    private IJSObjectReference? scanner;
+    private IJSObjectReference? mediaStream;
+    private Timer? scanTimer;
+    private bool isScanning = false;
+    private string errorMessage = "";
+    private List<ScanResult> scanHistory = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                jsModule = await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/qrCodeScanner.js");
+                await jsModule.InvokeVoidAsync("default");
+                scanner = await jsModule.InvokeAsync<IJSObjectReference>("QrScanner.new", 128);
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Failed to initialize scanner: {ex.Message}";
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task StartScanning()
+    {
+        try
+        {
+            errorMessage = "";
+            
+            // Request camera permissions and start video stream
+            var constraints = new
+            {
+                video = new
+                {
+                    facingMode = "environment", // Use back camera if available
+                    width = new { ideal = 640 },
+                    height = new { ideal = 480 }
+                }
+            };
+
+            mediaStream = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                "navigator.mediaDevices.getUserMedia", constraints);
+            
+            await JSRuntime.InvokeVoidAsync("eval", 
+                $"document.querySelector('video').srcObject = arguments[0]", mediaStream);
+
+            isScanning = true;
+            
+            // Start scanning timer
+            scanTimer = new Timer(async _ => await ScanFrame(), null, 0, 500);
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to start camera: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopScanning()
+    {
+        try
+        {
+            isScanning = false;
+            scanTimer?.Dispose();
+            
+            if (mediaStream != null)
+            {
+                await JSRuntime.InvokeVoidAsync("eval", 
+                    "arguments[0].getTracks().forEach(track => track.stop())", mediaStream);
+                await mediaStream.DisposeAsync();
+                mediaStream = null;
+            }
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to stop camera: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task ScanFrame()
+    {
+        if (!isScanning || jsModule == null || scanner == null)
+            return;
+
+        try
+        {
+            // Capture frame from video to canvas
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                const video = arguments[0];
+                const canvas = arguments[1];
+                const ctx = canvas.getContext('2d');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0);
+            ", videoElement, canvasElement);
+
+            // Scan the canvas for QR codes
+            var result = await scanner.InvokeAsync<string>("scan_image", canvasElement, "");
+            
+            if (!string.IsNullOrEmpty(result))
+            {
+                // Add successful scan to history
+                scanHistory.Add(new ScanResult
+                {
+                    Data = result,
+                    Timestamp = DateTime.Now,
+                    IsSuccess = true
+                });
+
+                // Optional: Stop scanning after successful scan
+                // await StopScanning();
+                
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            scanHistory.Add(new ScanResult
+            {
+                Data = $"Scan error: {ex.Message}",
+                Timestamp = DateTime.Now,
+                IsSuccess = false
+            });
+            
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        scanTimer?.Dispose();
+        
+        if (mediaStream != null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("eval", 
+                    "arguments[0].getTracks().forEach(track => track.stop())", mediaStream);
+                await mediaStream.DisposeAsync();
+            }
+            catch { }
+        }
+
+        if (scanner != null)
+        {
+            try
+            {
+                await scanner.DisposeAsync();
+            }
+            catch { }
+        }
+
+        if (jsModule != null)
+        {
+            try
+            {
+                await jsModule.DisposeAsync();
+            }
+            catch { }
+        }
+    }
+
+    private class ScanResult
+    {
+        public string Data { get; set; } = "";
+        public DateTime Timestamp { get; set; }
+        public bool IsSuccess { get; set; }
+    }
+}

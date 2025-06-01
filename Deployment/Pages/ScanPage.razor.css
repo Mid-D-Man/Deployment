@@ -70,28 +70,66 @@
     50% { opacity: 0.8; transform: scale(1.02); }
 }
 
-::deep(.video-container) {
-    width: 100%;
-    height: 100%;
-    position: relative;
-}
-
-::deep(video) {
+.scan-container video {
     width: 100%;
     height: 100%;
     object-fit: cover;
     border-radius: inherit;
 }
 
-::deep(.scan-overlay) {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    border: 2px dashed rgba(255, 255, 255, 0.5);
-    pointer-events: none;
-    box-sizing: border-box;
+.scan-controls {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2rem;
+}
+
+.btn {
+    padding: 0.75rem 2rem;
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary-600), var(--primary-700));
+    color: white;
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+    box-shadow: 0 4px 16px rgba(107, 114, 128, 0.3);
+}
+
+.btn-secondary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(107, 114, 128, 0.4);
+}
+
+.alert {
+    padding: 1rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.alert-danger {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: var(--error);
 }
 
 .scan-history {
@@ -134,12 +172,12 @@
 
 .scan-item.success {
     border-left-color: var(--success);
-    background: rgba(76, 175, 80, 0.1);
+    background: rgba(16, 185, 129, 0.1);
 }
 
 .scan-item.error {
     border-left-color: var(--error);
-    background: rgba(244, 67, 54, 0.1);
+    background: rgba(239, 68, 68, 0.1);
 }
 
 .scan-info {
@@ -159,6 +197,7 @@
     font-size: 0.95rem;
     color: var(--text-primary);
     font-weight: 500;
+    word-break: break-all;
 }
 
 .scan-status-icon {
@@ -182,6 +221,7 @@
     font-style: italic;
 }
 
+/* Responsive design */
 @media (max-width: 480px) {
     .scan-container {
         width: calc(100vw - 2rem);
@@ -192,5 +232,10 @@
 
     .scan-header h3 {
         font-size: 1.5rem;
+    }
+
+    .btn {
+        padding: 0.5rem 1.5rem;
+        font-size: 0.9rem;
     }
 }

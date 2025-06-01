@@ -31,7 +31,33 @@
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
     <script>navigator.serviceWorker.register('service-worker.js');</script>
+    <script>
+        // Camera utility functions for QR scanner
+        window.getCameraStream = async (constraints) => {
+            try {
+                return await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (error) {
+                console.error('Camera access error:', error);
+                throw error;
+            }
+        };
 
+        window.stopMediaStream = (stream) => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        };
+
+        // Check camera permissions
+        window.checkCameraPermission = async () => {
+            try {
+                const result = await navigator.permissions.query({ name: 'camera' });
+                return result.state;
+            } catch (error) {
+                return 'unknown';
+            }
+        };
+    </script>
 </body>
 
 </html>
