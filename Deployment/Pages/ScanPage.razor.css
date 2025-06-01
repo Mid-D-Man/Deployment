@@ -102,16 +102,24 @@
     }
 }
 
-/* Style the QR scanner component itself */
+/* Style the QR scanner component itself - Fixed for visibility */
 .qr-scanner-container ::deep video {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover;
     border-radius: 20px;
+    position: relative !important;
+    z-index: 1 !important;
+    display: block !important;
 }
 
 .qr-scanner-container ::deep canvas {
-    display: none !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 0 !important;
 }
 
 .scan-controls {
