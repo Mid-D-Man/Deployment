@@ -145,57 +145,135 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
     try {
         await initWasm();
 
-        console.log('Enhanced QR generation:', {
-            wasmAvailable,
-            hasWasmModule: !!wasmModule,
-            options
-        });
+        // Generate base QR code
+        const baseSvg = generate_qr_code(text, size, darkColor, lightColor);
 
-        // Try WASM enhanced version first
-        if (wasmAvailable && wasmModule && wasmModule.generate_enhanced_qr_code) {
-            try {
-                console.log('Using WASM enhanced generation');
-                const result = wasmModule.generate_enhanced_qr_code(
-                    text,
-                    size,
-                    darkColor,
-                    lightColor,
-                    options.errorLevel || null,
-                    options.logoUrl || null,
-                    options.useGradient || null,
-                    options.gradientDirection || null,
-                    options.gradientColor1 || null,
-                    options.gradientColor2 || null,
-                    options.margin || null
-                );
-                console.log('WASM enhanced result length:', result.length);
-                return result;
-            } catch (wasmError) {
-                console.warn("WASM enhanced generation failed, falling back to JS enhancement:", wasmError);
+        // Parse the SVG to a DOM object to manipulate it properly
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(baseSvg, "image/svg+xml");
+        const svgElement = svgDoc.documentElement;
+
+        // If we want to use gradient
+        if (options.useGradient) {
+            const gradId = `qrGradient_${Math.random().toString(36).substring(2, 9)}`;
+            const gradientDirection = options.gradientDirection || "linear-x";
+            const gradColor1 = options.gradientColor1 || darkColor;
+            const gradColor2 = options.gradientColor2 || darkColor;
+
+            // Create defs element
+            const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+
+            // Create gradient element
+            let gradient;
+            if (gradientDirection === "radial") {
+                gradient = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
+                gradient.setAttribute("cx", "50%");
+                gradient.setAttribute("cy", "50%");
+                gradient.setAttribute("r", "50%");
+            } else {
+                gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+
+                if (gradientDirection === "linear-x") {
+                    gradient.setAttribute("x1", "0%");
+                    gradient.setAttribute("y1", "50%");
+                    gradient.setAttribute("x2", "100%");
+                    gradient.setAttribute("y2", "50%");
+                } else if (gradientDirection === "linear-y") {
+                    gradient.setAttribute("x1", "50%");
+                    gradient.setAttribute("y1", "0%");
+                    gradient.setAttribute("x2", "50%");
+                    gradient.setAttribute("y2", "100%");
+                } else if (gradientDirection === "diagonal") {
+                    gradient.setAttribute("x1", "0%");
+                    gradient.setAttribute("y1", "0%");
+                    gradient.setAttribute("x2", "100%");
+                    gradient.setAttribute("y2", "100%");
+                }
+            }
+
+            // Set gradient id and create gradient stops
+            gradient.setAttribute("id", gradId);
+
+            const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+            stop1.setAttribute("offset", "0%");
+            stop1.setAttribute("stop-color", gradColor1);
+
+            const stop2 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+            stop2.setAttribute("offset", "100%");
+            stop2.setAttribute("stop-color", gradColor2);
+
+            gradient.appendChild(stop1);
+            gradient.appendChild(stop2);
+            defs.appendChild(gradient);
+
+            // Add defs as the first child of the SVG element
+            svgElement.insertBefore(defs, svgElement.firstChild);
+
+            // Replace dark color fills with the gradient reference,
+            // targeting only <path> and <rect> elements as before.
+            const targets = svgElement.querySelectorAll('path, rect');
+            targets.forEach(element => {
+                const fillColor = element.getAttribute('fill');
+                if (fillColor && fillColor.trim().toLowerCase() === darkColor.trim().toLowerCase()) {
+                    element.setAttribute('fill', `url(#${gradId})`);
+                }
+            });
+
+            // In case there are inline style attributes that define the fill,
+            // update them with proper parentheses for safe evaluation.
+            const styledElements = svgElement.querySelectorAll('[style*="fill"]');
+            styledElements.forEach(element => {
+                const style = element.getAttribute('style');
+                if (style && (style.includes(`fill:${darkColor}`) || style.includes(`fill: ${darkColor}`))) {
+                    element.style.fill = `url(#${gradId})`;
+                }
+            });
+        }
+
+        // If we want to add a logo
+        if (options.logoUrl) {
+            const logoSizeRatio = options.logoSizeRatio || 0.25;
+            const logoSize = Math.floor(size * logoSizeRatio);
+            const logoX = Math.floor((size - logoSize) / 2);
+            const logoY = Math.floor((size - logoSize) / 2);
+
+            // Create image element
+            const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
+            image.setAttribute("href", options.logoUrl);
+            image.setAttribute("x", logoX);
+            image.setAttribute("y", logoY);
+            image.setAttribute("width", logoSize);
+            image.setAttribute("height", logoSize);
+            image.setAttribute("preserveAspectRatio", "xMidYMid slice");
+
+            svgElement.appendChild(image);
+
+            // Add border around logo if requested
+            if (options.addLogoBorder) {
+                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                rect.setAttribute("x", logoX);
+                rect.setAttribute("y", logoY);
+                rect.setAttribute("width", logoSize);
+                rect.setAttribute("height", logoSize);
+                rect.setAttribute("fill", "none");
+                rect.setAttribute("stroke", options.logoBorderColor || "white");
+                rect.setAttribute("stroke-width", options.logoBorderWidth || "2");
+
+                if (options.logoBorderRadius) {
+                    rect.setAttribute("rx", options.logoBorderRadius);
+                    rect.setAttribute("ry", options.logoBorderRadius);
+                }
+
+                svgElement.appendChild(rect);
             }
         }
 
-        // Fallback to JS enhancement
-        console.log('Using JS-based enhancement');
-        let baseSvg;
-        if (wasmAvailable && wasmModule) {
-            console.log('Getting base SVG from WASM');
-            baseSvg = wasmModule.generate_qr_code(text, size, darkColor, lightColor);
-        } else {
-            console.log('Using fallback SVG generation');
-            baseSvg = generateFallbackQRCode(text, size, darkColor, lightColor);
-        }
-
-        console.log('Base SVG length:', baseSvg.length);
-
-        // Apply JS-based enhancements
-        const enhanced = applyEnhancements(baseSvg, size, darkColor, lightColor, options);
-        console.log('Enhanced SVG length:', enhanced.length);
-
-        return enhanced;
+        // Serialize SVG back to string
+        const serializer = new XMLSerializer();
+        return serializer.serializeToString(svgDoc);
     } catch (error) {
         console.error("Error generating enhanced QR code:", error);
-        return await generateQrCode(text, size, darkColor, lightColor);
+        throw error;
     }
 }
 

@@ -97,7 +97,7 @@ jobs:
           else
             echo "No wasm directory found"
           fi
-          
+          # im no longer using zxing 
           # Verify ZXing files are properly copied
           echo "=== Verifying ZXing deployment ==="
           if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
