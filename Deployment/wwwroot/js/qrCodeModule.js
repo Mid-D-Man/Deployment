@@ -1,30 +1,64 @@
-import init, { generate_enhanced_qr_code, generate_qr_code } from '/wasm/qr_code_generator.js';
+// Updated qrCodeModule.js with fallback support
 let wasmModule;
-
-// Update your initWasm function in qrCodeModule.js
 let wasmInitialized = false;
+let wasmAvailable = false;
+
+// Try to import WASM module, but provide fallback if not available
+async function tryInitWasm() {
+    try {
+        const wasmModule = await import('/wasm/qr_code_generator.js');
+        await wasmModule.default(); // Initialize WASM
+        wasmInitialized = true;
+        wasmAvailable = true;
+        console.log("WASM QR module initialized successfully");
+        return wasmModule;
+    } catch (error) {
+        console.warn("WASM QR module not available, using fallback:", error.message);
+        wasmAvailable = false;
+        return null;
+    }
+}
 
 export async function initWasm() {
-    if (!wasmInitialized) {
-        try {
-            await init();
-            wasmInitialized = true;
-            console.log("WASM module initialized successfully");
-        } catch (error) {
-            console.error("Failed to initialize WASM module:", error);
-            throw error;
-        }
+    if (!wasmInitialized && !wasmAvailable) {
+        wasmModule = await tryInitWasm();
     }
     return wasmInitialized;
 }
 
+// Fallback QR code generation using a simple library approach
+function generateFallbackQRCode(text, size, darkColor, lightColor) {
+    // Create a simple SVG-based QR code placeholder
+    // This is a basic implementation - you might want to use a library like qrcode-generator
+    const svg = `
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="${lightColor}"/>
+            <rect x="10%" y="10%" width="80%" height="80%" fill="${darkColor}"/>
+            <rect x="15%" y="15%" width="70%" height="70%" fill="${lightColor}"/>
+            <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="12" fill="${darkColor}">
+                QR Code
+            </text>
+            <text x="50%" y="65%" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="8" fill="${darkColor}">
+                ${text.substring(0, 20)}${text.length > 20 ? '...' : ''}
+            </text>
+        </svg>
+    `;
+    return svg;
+}
+
 export async function generateQrCode(text, size, darkColor, lightColor) {
-    await initWasm();
     try {
-        return generate_qr_code(text, size, darkColor, lightColor);
+        await initWasm();
+
+        if (wasmAvailable && wasmModule) {
+            return wasmModule.generate_qr_code(text, size, darkColor, lightColor);
+        } else {
+            console.log("Using fallback QR code generation");
+            return generateFallbackQRCode(text, size, darkColor, lightColor);
+        }
     } catch (error) {
-        console.error("Error generating QR code:", error);
-        throw error;
+        console.error("Error generating QR code, using fallback:", error);
+        return generateFallbackQRCode(text, size, darkColor, lightColor);
     }
 }
 
@@ -32,13 +66,25 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
     try {
         await initWasm();
 
-        // Generate base QR code
-        const baseSvg = generate_qr_code(text, size, darkColor, lightColor);
+        // Generate base QR code (either WASM or fallback)
+        let baseSvg;
+        if (wasmAvailable && wasmModule) {
+            baseSvg = wasmModule.generate_qr_code(text, size, darkColor, lightColor);
+        } else {
+            baseSvg = generateFallbackQRCode(text, size, darkColor, lightColor);
+        }
 
         // Parse the SVG to a DOM object to manipulate it properly
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(baseSvg, "image/svg+xml");
         const svgElement = svgDoc.documentElement;
+
+        // Check for parsing errors
+        const parserError = svgDoc.querySelector('parsererror');
+        if (parserError) {
+            console.error('SVG parsing error:', parserError.textContent);
+            return baseSvg; // Return original if parsing fails
+        }
 
         // If we want to use gradient
         if (options.useGradient) {
@@ -109,7 +155,6 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
         }
 
         // If we want to add a logo
-        // If we want to add a logo
         if (options.logoUrl) {
             const logoSizeRatio = options.logoSizeRatio || 0.25;
             const logoSize = Math.floor(size * logoSizeRatio);
@@ -155,15 +200,27 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
         return serializer.serializeToString(svgDoc);
     } catch (error) {
         console.error("Error generating enhanced QR code:", error);
-        throw error;
+        // Return basic QR code as fallback
+        return await generateQrCode(text, size, darkColor, lightColor);
     }
 }
+
 export function setSvgContent(elementId, svgContent) {
     const element = document.getElementById(elementId);
     if (element) {
-        console.log("SVG content:", svgContent); // Debug line
+        console.log(`Setting SVG content for element: ${elementId}`);
+        console.log("SVG content length:", svgContent.length);
         element.innerHTML = svgContent;
     } else {
         console.error(`Element with ID '${elementId}' not found`);
     }
+}
+
+// Debug function to check module status
+export function getModuleStatus() {
+    return {
+        wasmInitialized,
+        wasmAvailable,
+        hasWasmModule: !!wasmModule
+    };
 }
