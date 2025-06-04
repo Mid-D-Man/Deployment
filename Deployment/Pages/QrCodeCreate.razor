@@ -1,6 +1,193 @@
 @page "/QrCodeCreate"
-<h3>QrCodeCreate</h3>
+@using AirCode
+@using AirCode.Services.Cryptography
+
+<PageTitle>QR Code Generator</PageTitle>
+
+<div class="qr-code-page">
+    <div class="page-header">
+        <h1>QR Code Generator</h1>
+        <p>Generate secure QR codes for attendance tracking</p>
+    </div>
+
+    <div class="form-container">
+        <div class="form-group">
+            <label for="courseCode">Course Code *</label>
+            <input @bind="courseCode" type="text" id="courseCode" placeholder="e.g., CS101" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <label for="lectureId">Lecture/Session ID</label>
+            <input @bind="lectureId" type="text" id="lectureId" placeholder="e.g., Lecture 1" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <label for="duration">Duration (minutes)</label>
+            <input @bind="duration" type="number" id="duration" min="1" max="120" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <label for="theme">QR Code Theme</label>
+            <select @bind="selectedTheme" id="theme" class="form-control">
+                <option value="@QRCodeTheme.Standard">Standard</option>
+                <option value="@QRCodeTheme.Gradient">Gradient</option>
+                <option value="@QRCodeTheme.Branded">Branded (with logo)</option>
+                <option value="@QRCodeTheme.GradientWithLogo">Gradient with Logo</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <button @onclick="GenerateQRCode" class="btn btn-primary" disabled="@(!CanGenerate)">
+                Generate QR Code
+            </button>
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="error-message">@errorMessage</div>
+            }
+        </div>
+    </div>
+
+    @if (showQRCode && !string.IsNullOrEmpty(courseCode))
+    {
+        <div class="qr-code-section">
+            <QRCodeCompo 
+                SessionId="@sessionId"
+                CourseCode="@courseCode"
+                LectureId="@lectureId"
+                StartTime="@startTime"
+                Duration="@duration"
+                Theme="@selectedTheme"
+                Options="@GetQRCodeOptions()"
+                OnGenerated="@OnQRCodeGenerated" />
+        </div>
+    }
+
+    @if (generatedQRCode != null)
+    {
+        <div class="qr-code-info-section">
+            <h3>QR Code Details</h3>
+            <div class="info-card">
+                <p><strong>Session ID:</strong> @sessionId</p>
+                <p><strong>Generated:</strong> @generatedQRCode.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss UTC")</p>
+                <p><strong>Valid Until:</strong> @startTime.AddMinutes(duration).ToString("yyyy-MM-dd HH:mm:ss UTC")</p>
+                <p><strong>Theme:</strong> @selectedTheme</p>
+            </div>
+            
+            <div class="action-buttons">
+                <button @onclick="GenerateNewQRCode" class="btn btn-secondary">
+                    Generate New QR Code
+                </button>
+                <button @onclick="ClearQRCode" class="btn btn-outline">
+                    Clear
+                </button>
+            </div>
+        </div>
+    }
+</div>
 
 @code {
-    
+    private string courseCode = "";
+    private string lectureId = "";
+    private string sessionId = "";
+    private DateTime startTime = DateTime.UtcNow;
+    private int duration = 30;
+    private QRCodeTheme selectedTheme = QRCodeTheme.Standard;
+    private bool showQRCode = false;
+    private string errorMessage = "";
+    private QRCodeData generatedQRCode;
+
+    private bool CanGenerate => !string.IsNullOrWhiteSpace(courseCode);
+
+    private void GenerateQRCode()
+    {
+        errorMessage = "";
+        
+        if (string.IsNullOrWhiteSpace(courseCode))
+        {
+            errorMessage = "Course Code is required";
+            return;
+        }
+
+        sessionId = Guid.NewGuid().ToString("N");
+        startTime = DateTime.UtcNow;
+        showQRCode = true;
+        
+        StateHasChanged();
+    }
+
+    private void GenerateNewQRCode()
+    {
+        GenerateQRCode();
+    }
+
+    private void ClearQRCode()
+    {
+        showQRCode = false;
+        generatedQRCode = null;
+        errorMessage = "";
+        StateHasChanged();
+    }
+
+    private QRCodeBaseOptions GetQRCodeOptions()
+    {
+        return selectedTheme switch
+        {
+            QRCodeTheme.Gradient => new QRCodeGradientOptions
+            {
+                Size = 300,
+                DarkColor = "#000000",
+                LightColor = "#FFFFFF",
+                ErrorLevel = ErrorCorrectionLevel.M,
+                Margin = 4,
+                Direction = GradientDirection.Diagonal,
+                GradientColor1 = "#3498db",
+                GradientColor2 = "#2c3e50"
+            },
+            QRCodeTheme.Branded => new QRCodeBrandedOptions
+            {
+                Size = 300,
+                DarkColor = "#000000",
+                LightColor = "#FFFFFF",
+                ErrorLevel = ErrorCorrectionLevel.M,
+                Margin = 4,
+                LogoUrl = "/icon-192.png",
+                LogoSizeRatio = 0.25f,
+                AddLogoBorder = true,
+                LogoBorderColor = "#FFFFFF",
+                LogoBorderWidth = 2,
+                LogoBorderRadius = 8
+            },
+            QRCodeTheme.GradientWithLogo => new QRCodeGradientBrandedOptions
+            {
+                Size = 300,
+                DarkColor = "#000000",
+                LightColor = "#FFFFFF",
+                ErrorLevel = ErrorCorrectionLevel.M,
+                Margin = 4,
+                Direction = GradientDirection.Radial,
+                GradientColor1 = "#e74c3c",
+                GradientColor2 = "#8e44ad",
+                LogoUrl = "/icon-192.png",
+                LogoSizeRatio = 0.25f,
+                AddLogoBorder = true,
+                LogoBorderColor = "#FFFFFF",
+                LogoBorderWidth = 3,
+                LogoBorderRadius = 12
+            },
+            _ => new QRCodeBaseOptions
+            {
+                Size = 300,
+                DarkColor = "#000000",
+                LightColor = "#FFFFFF",
+                ErrorLevel = ErrorCorrectionLevel.M,
+                Margin = 4
+            }
+        };
+    }
+
+    private async Task OnQRCodeGenerated(QRCodeData qrCodeData)
+    {
+        generatedQRCode = qrCodeData;
+        StateHasChanged();
+    }
 }
