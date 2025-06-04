@@ -146,7 +146,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
         await initWasm();
 
         // Generate base QR code
-        const baseSvg = generate_qr_code(text, size, darkColor, lightColor);
+        const baseSvg = generateQrCode(text, size, darkColor, lightColor);
 
         // Parse the SVG to a DOM object to manipulate it properly
         const parser = new DOMParser();
