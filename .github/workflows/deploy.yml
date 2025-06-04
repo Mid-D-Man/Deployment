@@ -1,4 +1,4 @@
-name: Deploy Blazor WASM PWA to GitHub Pages
+name: Deploy Blazor WASM PWA with QR WASM Module to GitHub Pages
 
 on:
   push:
@@ -29,10 +29,150 @@ jobs:
         with:
           dotnet-version: '7.0.x'
 
-      - name: Restore dependencies
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            wasm-qr-generator/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Setup WASM QR Generator Project
+        run: |
+          if [ ! -d "wasm-qr-generator" ]; then
+            echo "Creating WASM QR generator project structure"
+            mkdir -p wasm-qr-generator/src
+          
+            # Generate Cargo.toml with proper dependencies
+            cat > wasm-qr-generator/Cargo.toml << 'EOF'
+          [package]
+          name = "qr-code-generator"
+          version = "0.1.0"
+          edition = "2021"
+          
+          [lib]
+          crate-type = ["cdylib"]
+          
+          [dependencies]
+          wasm-bindgen = "0.2.84"
+          qrcode = "0.14.1"
+          js-sys = "0.3.61"
+          
+          [dependencies.web-sys]
+          version = "0.3.61"
+          features = [
+            "console",
+            "Document",
+            "Element",
+            "HtmlElement",
+            "Window",
+          ]
+          
+          [dependencies.wasm-bindgen-futures]
+          version = "0.4.34"
+          EOF
+          
+            # Generate optimized Rust QR generator
+            cat > wasm-qr-generator/src/lib.rs << 'EOF'
+          use wasm_bindgen::prelude::*;
+          use qrcode::{QrCode, EcLevel};
+          
+          #[wasm_bindgen]
+          extern "C" {
+              #[wasm_bindgen(js_namespace = console)]
+              fn log(s: &str);
+          }
+          
+          macro_rules! console_log {
+              ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+          }
+          
+          #[wasm_bindgen]
+          pub fn generate_qr_code(text: &str, size: u32, dark_color: &str, light_color: &str) -> Result<String, JsValue> {
+              console_log!("Generating QR code for text length: {}", text.len());
+          
+              let qr = QrCode::with_error_correction_level(text, EcLevel::M)
+                  .map_err(|e| JsValue::from_str(&format!("QR generation error: {}", e)))?;
+          
+              let image = qr.render::<qrcode::render::svg::Color>()
+                  .min_dimensions(size, size)
+                  .dark_color(qrcode::render::svg::Color(dark_color))
+                  .light_color(qrcode::render::svg::Color(light_color))
+                  .build();
+          
+              console_log!("QR code generated successfully, size: {}x{}", size, size);
+              Ok(image)
+          }
+          
+          #[wasm_bindgen]
+          pub fn generate_enhanced_qr_code(
+              text: &str, 
+              size: u32, 
+              dark_color: &str, 
+              light_color: &str,
+              error_level: &str
+          ) -> Result<String, JsValue> {
+              let ec_level = match error_level {
+                  "L" => EcLevel::L,
+                  "M" => EcLevel::M,
+                  "Q" => EcLevel::Q,
+                  "H" => EcLevel::H,
+                  _ => EcLevel::M,
+              };
+          
+              let qr = QrCode::with_error_correction_level(text, ec_level)
+                  .map_err(|e| JsValue::from_str(&format!("Enhanced QR generation error: {}", e)))?;
+          
+              let image = qr.render::<qrcode::render::svg::Color>()
+                  .min_dimensions(size, size)
+                  .dark_color(qrcode::render::svg::Color(dark_color))
+                  .light_color(qrcode::render::svg::Color(light_color))
+                  .module_dimensions(2, 2)
+                  .build();
+          
+              Ok(image)
+          }
+          
+          #[wasm_bindgen(start)]
+          pub fn main() {
+              console_log!("WASM QR Code Generator initialized");
+          }
+          EOF
+          fi
+
+      - name: Build WASM QR Module
+        run: |
+          cd wasm-qr-generator
+          echo "Building WASM module..."
+          wasm-pack build --target web --out-dir ../Deployment/wwwroot/wasm --release
+          
+          # Verify WASM build output
+          echo "=== WASM Build Verification ==="
+          ls -la ../Deployment/wwwroot/wasm/
+          
+          # Check file sizes
+          if [ -f "../Deployment/wwwroot/wasm/qr_code_generator_bg.wasm" ]; then
+            echo "WASM binary size: $(du -h ../Deployment/wwwroot/wasm/qr_code_generator_bg.wasm)"
+          fi
+
+      - name: Restore .NET dependencies
         run: dotnet restore
 
-      - name: Build
+      - name: Build .NET Project
         run: dotnet build --configuration Release --no-restore
 
       - name: Publish Blazor WASM
@@ -41,59 +181,134 @@ jobs:
             echo "Publishing Deployment/Deployment.csproj"
             dotnet publish Deployment/Deployment.csproj --configuration Release --no-build --output ./dist
           else
-            echo "Looking for Blazor WASM project..."
+            echo "Scanning for Blazor WASM project..."
             find . -name "*.csproj" -exec grep -l "Microsoft.AspNetCore.Components.WebAssembly" {} \; | head -1 | xargs -I {} dotnet publish {} --configuration Release --no-build --output ./dist
           fi
 
-      - name: Prepare for GitHub Pages
+      - name: Prepare GitHub Pages Deployment
         run: |
           mkdir -p ./pages
           
+          # Copy wwwroot contents
           if [ -d "./dist/wwwroot" ]; then
             cp -r ./dist/wwwroot/* ./pages/
           else
-            echo "ERROR: wwwroot not found"
+            echo "ERROR: wwwroot directory not found"
             exit 1
           fi
           
-          # Critical: Add .nojekyll to prevent Jekyll processing
+          # Critical GitHub Pages configuration
           touch ./pages/.nojekyll
           
-          # Create 404.html for SPA routing
+          # Configure SPA routing
           cp ./pages/index.html ./pages/404.html
           
-          # Update base href for GitHub Pages subpath
-          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
-          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
+          # Update base href for GitHub Pages subpath deployment
+          REPO_NAME="${{ github.event.repository.name }}"
+          sed -i "s|<base href=\"/\" />|<base href=\"/${REPO_NAME}/\" />|g" ./pages/index.html
+          sed -i "s|<base href=\"/\" />|<base href=\"/${REPO_NAME}/\" />|g" ./pages/404.html
           
-          # Fix MIME type issues by adding web.config for proper JS serving
+          # Enhanced web.config for comprehensive MIME type handling
           cat > ./pages/web.config << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>
             <system.webServer>
               <staticContent>
+                <remove fileExtension=".js" />
+                <remove fileExtension=".wasm" />
+                <remove fileExtension=".json" />
+                <remove fileExtension=".dat" />
                 <mimeMap fileExtension=".js" mimeType="application/javascript" />
                 <mimeMap fileExtension=".wasm" mimeType="application/wasm" />
+                <mimeMap fileExtension=".json" mimeType="application/json" />
+                <mimeMap fileExtension=".dat" mimeType="application/octet-stream" />
               </staticContent>
               <httpErrors errorMode="Custom" defaultResponseMode="File">
                 <remove statusCode="404" />
                 <error statusCode="404" path="404.html" />
               </httpErrors>
+              <rewrite>
+                <rules>
+                  <rule name="WASM Content-Type" stopProcessing="false">
+                    <match url=".*\.wasm$" />
+                    <serverVariables>
+                      <set name="RESPONSE_Content_Type" value="application/wasm" />
+                    </serverVariables>
+                    <action type="None" />
+                  </rule>
+                  <rule name="JavaScript Content-Type" stopProcessing="false">
+                    <match url=".*\.js$" />
+                    <serverVariables>
+                      <set name="RESPONSE_Content_Type" value="application/javascript" />
+                    </serverVariables>
+                    <action type="None" />
+                  </rule>
+                </rules>
+              </rewrite>
             </system.webServer>
           </configuration>
           EOF
-          
-          # Verify ZXing files are properly copied
-          echo "=== Verifying ZXing deployment ==="
-          if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
-            echo "✅ ZXing JS file found"
-            file ./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js
-          else
-            echo "❌ ZXing JS file missing"
-            find ./pages -name "*.js" | grep -i zxing || echo "No ZXing JS files found"
-          fi
 
-      - name: Upload Pages artifact
+      - name: Comprehensive Deployment Verification
+        run: |
+          echo "=== Comprehensive Deployment Verification ==="
+          
+          # WASM Module Verification
+          echo "--- WASM QR Generator Module ---"
+          if [ -f "./pages/wasm/qr_code_generator.js" ]; then
+            echo "✅ WASM JS binding: $(du -h ./pages/wasm/qr_code_generator.js)"
+            head -5 ./pages/wasm/qr_code_generator.js
+          else
+            echo "❌ CRITICAL: WASM JS binding missing"
+            exit 1
+          fi
+          
+          if [ -f "./pages/wasm/qr_code_generator_bg.wasm" ]; then
+            echo "✅ WASM binary: $(du -h ./pages/wasm/qr_code_generator_bg.wasm)"
+            file ./pages/wasm/qr_code_generator_bg.wasm
+          else
+            echo "❌ CRITICAL: WASM binary missing"
+            exit 1
+          fi
+          
+          if [ -f "./pages/wasm/package.json" ]; then
+            echo "✅ WASM package metadata found"
+            cat ./pages/wasm/package.json | jq '.name, .version' || cat ./pages/wasm/package.json
+          fi
+          
+          # ZXing Blazor Dependencies
+          echo "--- ZXing Blazor Dependencies ---"
+          if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
+            echo "✅ ZXing JS: $(du -h ./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js)"
+          else
+            echo "⚠️  ZXing JS missing - scanning for alternatives"
+            find ./pages -name "*.js" | grep -i zxing | head -5 || echo "No ZXing JS files located"
+          fi
+          
+          # Core Application Assets
+          echo "--- Core Application Assets ---"
+          echo "✅ Application files:"
+          ls -la ./pages/*.html
+          ls -la ./pages/css/ | head -3
+          ls -la ./pages/js/ | head -3
+          
+          # Blazor Framework Files
+          echo "--- Blazor Framework Verification ---"
+          if [ -d "./pages/_framework" ]; then
+            echo "✅ Blazor framework: $(du -sh ./pages/_framework)"
+            ls ./pages/_framework/*.wasm | wc -l | xargs echo "WASM assemblies:"
+          else
+            echo "❌ CRITICAL: Blazor framework missing"
+            exit 1
+          fi
+          
+          # Final deployment size analysis
+          echo "--- Deployment Size Analysis ---"
+          echo "Total deployment size: $(du -sh ./pages)"
+          echo "Largest components:"
+          du -sh ./pages/* | sort -hr | head -10
+
+      - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./pages
@@ -109,3 +324,10 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Post-Deployment Verification
+        run: |
+          echo "=== Post-Deployment Status ==="
+          echo "Deployment URL: ${{ steps.deployment.outputs.page_url }}"
+          echo "Expected WASM endpoint: ${{ steps.deployment.outputs.page_url }}wasm/qr_code_generator.js"
+          echo "Expected WASM binary: ${{ steps.deployment.outputs.page_url }}wasm/qr_code_generator_bg.wasm"

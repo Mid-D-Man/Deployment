@@ -1,0 +1,111 @@
+name: Deploy Blazor WASM PWA to GitHub Pages
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '7.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publish Blazor WASM
+        run: |
+          if [ -f "Deployment/Deployment.csproj" ]; then
+            echo "Publishing Deployment/Deployment.csproj"
+            dotnet publish Deployment/Deployment.csproj --configuration Release --no-build --output ./dist
+          else
+            echo "Looking for Blazor WASM project..."
+            find . -name "*.csproj" -exec grep -l "Microsoft.AspNetCore.Components.WebAssembly" {} \; | head -1 | xargs -I {} dotnet publish {} --configuration Release --no-build --output ./dist
+          fi
+
+      - name: Prepare for GitHub Pages
+        run: |
+          mkdir -p ./pages
+          
+          if [ -d "./dist/wwwroot" ]; then
+            cp -r ./dist/wwwroot/* ./pages/
+          else
+            echo "ERROR: wwwroot not found"
+            exit 1
+          fi
+          
+          # Critical: Add .nojekyll to prevent Jekyll processing
+          touch ./pages/.nojekyll
+          
+          # Create 404.html for SPA routing
+          cp ./pages/index.html ./pages/404.html
+          
+          # Update base href for GitHub Pages subpath
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
+          
+          # Fix MIME type issues by adding web.config for proper JS serving
+          cat > ./pages/web.config << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <system.webServer>
+              <staticContent>
+                <mimeMap fileExtension=".js" mimeType="application/javascript" />
+                <mimeMap fileExtension=".wasm" mimeType="application/wasm" />
+              </staticContent>
+              <httpErrors errorMode="Custom" defaultResponseMode="File">
+                <remove statusCode="404" />
+                <error statusCode="404" path="404.html" />
+              </httpErrors>
+            </system.webServer>
+          </configuration>
+          EOF
+          
+          # Verify ZXing files are properly copied
+          echo "=== Verifying ZXing deployment ==="
+          if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
+            echo "✅ ZXing JS file found"
+            file ./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js
+          else
+            echo "❌ ZXing JS file missing"
+            find ./pages -name "*.js" | grep -i zxing || echo "No ZXing JS files found"
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./pages
+
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
