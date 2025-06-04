@@ -2,7 +2,7 @@
 let wasmModule;
 let wasmInitialized = false;
 let wasmAvailable = false;
-
+//am
 // Try to import WASM module with proper error handling
 async function tryInitWasm() {
     try {
