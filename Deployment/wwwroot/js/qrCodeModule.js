@@ -160,7 +160,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             const gradColor1 = options.gradientColor1 || darkColor;
             const gradColor2 = options.gradientColor2 || darkColor;
 
-            // Create the defs element
+            // Create the defs element and gradient element based on direction
             const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
 
             let gradient;
@@ -189,9 +189,8 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 }
             }
 
-            // Set gradient id and create stops
+            // Set id and add the color stops
             gradient.setAttribute("id", gradId);
-
             const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
             stop1.setAttribute("offset", "0%");
             stop1.setAttribute("stop-color", gradColor1);
@@ -216,7 +215,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 }
             });
 
-            // Also update inline style attributes if they contain the dark color fill
+            // Also, update any inline style definitions for fill
             const styledElements = svgElement.querySelectorAll('[style*="fill"]');
             styledElements.forEach(element => {
                 const style = element.getAttribute('style');
@@ -226,15 +225,22 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             });
         }
 
-        // If a logo is requested, add the logo to the QR code
+        // If a logo is requested, add the logo to the QR code.
+        // If the QR code drawing area has its own margin (like in the fallback,
+        // where margin = cellSize * 2), the logo can be centered within that area.
+        // Provide the margin via options.qrMargin (default is 0 if not provided).
         if (options.logoUrl) {
             const logoSizeRatio = options.logoSizeRatio || 0.25;
             const logoSize = Math.floor(size * logoSizeRatio);
-            const logoX = Math.floor((size - logoSize) / 2);
-            const logoY = Math.floor((size - logoSize) / 2);
+            const qrMargin = options.qrMargin || 0;  // set to fallback margin if needed
+            const effectiveSize = size - 2 * qrMargin;
+            const logoX = Math.floor(qrMargin + (effectiveSize - logoSize) / 2);
+            const logoY = Math.floor(qrMargin + (effectiveSize - logoSize) / 2);
 
             const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
+            // Modern browsers support the simple "href", but older implementations may require "xlink:href"
             image.setAttribute("href", options.logoUrl);
+            image.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", options.logoUrl);
             image.setAttribute("x", logoX);
             image.setAttribute("y", logoY);
             image.setAttribute("width", logoSize);
@@ -270,6 +276,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
         throw error;
     }
 }
+
 
 function applyEnhancements(baseSvg, size, darkColor, lightColor, options) {
     try {
