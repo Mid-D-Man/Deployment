@@ -1,3 +1,4 @@
+using AirCode.Services.Cryptography;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Deployment;
@@ -9,4 +10,5 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 //ok starting off
 builder.Services.AddScoped<QrScannerService>();
+builder.Services.AddScoped<ICryptographyService,CryptographyService>();
 await builder.Build().RunAsync();
