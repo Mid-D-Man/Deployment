@@ -6,7 +6,7 @@ let wasmAvailable = false;
 // Try to import WASM module, but provide fallback if not available
 async function tryInitWasm() {
     try {
-        const wasmModule = await import('/wasm/qr_code_generator.js');
+        const wasmModule = await import('./wasm/qr_code_generator.js');
         await wasmModule.default(); // Initialize WASM
         wasmInitialized = true;
         wasmAvailable = true;
