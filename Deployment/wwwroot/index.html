@@ -33,8 +33,7 @@
     <script>navigator.serviceWorker.register('service-worker.js');</script>
 
     <!-- Load WASM files if they exist -->
-    <script src="./wasm/qr_code_generator.js" onerror="console.warn('WASM QR generator not found, will use fallback')"></script>
-
+    <script type="module" src="./wasm/qr_code_generator.js" onerror="console.warn('WASM QR generator not found')"></script>
     <!-- Load modules -->
     <script type="module" src="./js/qrCodeModule.js"></script>
     <script src="./js/cryptographyHandler.js"></script>
