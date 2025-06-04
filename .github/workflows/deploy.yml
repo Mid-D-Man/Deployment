@@ -66,22 +66,37 @@ jobs:
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
           
-          # Fix MIME type issues by adding web.config for proper JS serving
-          cat > ./pages/web.config << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <configuration>
-            <system.webServer>
-              <staticContent>
-                <mimeMap fileExtension=".js" mimeType="application/javascript" />
-                <mimeMap fileExtension=".wasm" mimeType="application/wasm" />
-              </staticContent>
-              <httpErrors errorMode="Custom" defaultResponseMode="File">
-                <remove statusCode="404" />
-                <error statusCode="404" path="404.html" />
-              </httpErrors>
-            </system.webServer>
-          </configuration>
+          # Fix MIME type issues - Add _headers file for Netlify-style hosting
+          cat > ./pages/_headers << 'EOF'
+          /*.wasm
+            Content-Type: application/wasm
+          /*.js
+            Content-Type: application/javascript
           EOF
+          
+          # Create .htaccess for Apache servers
+          cat > ./pages/.htaccess << 'EOF'
+          AddType application/wasm .wasm
+          AddType application/javascript .js
+          
+          # SPA routing fallback
+          RewriteEngine On
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteRule . /index.html [L]
+          EOF
+          
+          # Verify WASM files exist and set proper permissions
+          echo "=== Verifying WASM files ==="
+          find ./pages -name "*.wasm" -type f -exec echo "Found WASM file: {}" \; -exec file {} \;
+          
+          # List all files in wasm directory for debugging
+          if [ -d "./pages/wasm" ]; then
+            echo "Contents of wasm directory:"
+            ls -la ./pages/wasm/
+          else
+            echo "No wasm directory found"
+          fi
           
           # Verify ZXing files are properly copied
           echo "=== Verifying ZXing deployment ==="

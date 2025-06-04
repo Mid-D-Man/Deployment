@@ -65,6 +65,22 @@
             }
         };
     </script>
+    <script>
+        // Add this to debug WASM loading
+        window.addEventListener('load', async () => {
+            try {
+                const wasmUrl = './wasm/qr_code_generator_bg.wasm';
+                const response = await fetch(wasmUrl);
+                console.log('WASM fetch response:', {
+                    status: response.status,
+                    contentType: response.headers.get('content-type'),
+                    url: response.url
+                });
+            } catch (error) {
+                console.error('WASM fetch failed:', error);
+            }
+        });
+    </script>
 </body>
 
 </html>

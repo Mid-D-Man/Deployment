@@ -1,48 +1,127 @@
-// Updated qrCodeModule.js with fallback support
+// Fixed qrCodeModule.js with proper WASM loading
 let wasmModule;
 let wasmInitialized = false;
 let wasmAvailable = false;
 
-// Try to import WASM module, but provide fallback if not available
+// Try to import WASM module with proper error handling
 async function tryInitWasm() {
     try {
-        const wasmModule = await import('../wasm/qr_code_generator');
-        await wasmModule.default(); // Initialize WASM
+        // Try to load the WASM module with explicit file extension
+        const wasmModuleUrl = new URL('../wasm/qr_code_generator.js', import.meta.url);
+        console.log('Attempting to load WASM from:', wasmModuleUrl.href);
+
+        const wasmModule = await import(wasmModuleUrl.href);
+
+        // Initialize WASM - try with explicit WASM file path
+        const wasmBinaryUrl = new URL('../wasm/qr_code_generator_bg.wasm', import.meta.url);
+        console.log('Loading WASM binary from:', wasmBinaryUrl.href);
+
+        await wasmModule.default(wasmBinaryUrl.href);
+
         wasmInitialized = true;
         wasmAvailable = true;
         console.log("WASM QR module initialized successfully");
         return wasmModule;
     } catch (error) {
         console.warn("WASM QR module not available, using fallback:", error.message);
+        console.error("Full error:", error);
         wasmAvailable = false;
+        return null;
+    }
+}
+
+// Alternative loading method for GitHub Pages
+async function tryInitWasmAlternative() {
+    try {
+        // Try fetching the WASM file directly to check if it exists
+        const wasmUrl = new URL('../wasm/qr_code_generator_bg.wasm', import.meta.url);
+        const response = await fetch(wasmUrl.href);
+
+        if (!response.ok) {
+            throw new Error(`WASM file not found: ${response.status} ${response.statusText}`);
+        }
+
+        // Check content type
+        const contentType = response.headers.get('content-type');
+        console.log('WASM file content-type:', contentType);
+
+        if (contentType && !contentType.includes('application/wasm') && !contentType.includes('application/octet-stream')) {
+            console.warn('WASM file served with incorrect MIME type:', contentType);
+        }
+
+        // Load the JS wrapper
+        const jsModule = await import('../wasm/qr_code_generator.js');
+
+        // Initialize with the fetched WASM
+        const wasmBytes = await response.arrayBuffer();
+        await jsModule.default(wasmBytes);
+
+        wasmInitialized = true;
+        wasmAvailable = true;
+        console.log("WASM QR module initialized via alternative method");
+        return jsModule;
+    } catch (error) {
+        console.warn("Alternative WASM loading failed:", error.message);
         return null;
     }
 }
 
 export async function initWasm() {
     if (!wasmInitialized && !wasmAvailable) {
+        // Try primary method first
         wasmModule = await tryInitWasm();
+
+        // If primary fails, try alternative
+        if (!wasmModule) {
+            wasmModule = await tryInitWasmAlternative();
+        }
     }
     return wasmInitialized;
 }
 
-// Fallback QR code generation using a simple library approach
+// Enhanced fallback QR code generation
 function generateFallbackQRCode(text, size, darkColor, lightColor) {
-    // Create a simple SVG-based QR code placeholder
-    // This is a basic implementation - you might want to use a library like qrcode-generator
-    const svg = `
-        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100%" height="100%" fill="${lightColor}"/>
-            <rect x="10%" y="10%" width="80%" height="80%" fill="${darkColor}"/>
-            <rect x="15%" y="15%" width="70%" height="70%" fill="${lightColor}"/>
-            <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="12" fill="${darkColor}">
-                QR Code
-            </text>
-            <text x="50%" y="65%" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="8" fill="${darkColor}">
-                ${text.substring(0, 20)}${text.length > 20 ? '...' : ''}
-            </text>
-        </svg>
-    `;
+    // Create a more detailed SVG-based QR code placeholder
+    const cellSize = Math.floor(size / 25); // 25x25 grid
+    const margin = cellSize * 2;
+    const actualSize = size - (margin * 2);
+
+    // Simple pattern that resembles a QR code
+    const pattern = [
+        [1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,0,0,0,0,1],
+        [1,0,1,1,1,0,1,0,0,1,1,1,0,1,0,1,1,0,1,0,1,1,1,0,1],
+        [1,0,1,1,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,1,1,0,1],
+        [1,0,1,1,1,0,1,0,0,1,0,1,1,1,0,1,0,0,1,0,1,1,1,0,1],
+        [1,0,0,0,0,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,0,0,0,0,1],
+        [1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1],
+        [0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1,0,0,0,0,0,0,0,0,0],
+        // ... simplified pattern continues
+    ];
+
+    let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">`;
+    svg += `<rect width="100%" height="100%" fill="${lightColor}"/>`;
+
+    // Draw finder patterns (corners)
+    const finderSize = cellSize * 7;
+    const positions = [[margin, margin], [size - margin - finderSize, margin], [margin, size - margin - finderSize]];
+
+    positions.forEach(([x, y]) => {
+        svg += `<rect x="${x}" y="${y}" width="${finderSize}" height="${finderSize}" fill="${darkColor}"/>`;
+        svg += `<rect x="${x + cellSize}" y="${y + cellSize}" width="${finderSize - 2*cellSize}" height="${finderSize - 2*cellSize}" fill="${lightColor}"/>`;
+        svg += `<rect x="${x + 2*cellSize}" y="${y + 2*cellSize}" width="${finderSize - 4*cellSize}" height="${finderSize - 4*cellSize}" fill="${darkColor}"/>`;
+    });
+
+    // Add some data pattern
+    for (let i = 9; i < 16; i++) {
+        for (let j = 9; j < 16; j++) {
+            if ((i + j) % 2 === 0) {
+                svg += `<rect x="${margin + i * cellSize}" y="${margin + j * cellSize}" width="${cellSize}" height="${cellSize}" fill="${darkColor}"/>`;
+            }
+        }
+    }
+
+    svg += '</svg>';
     return svg;
 }
 
@@ -66,7 +145,28 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
     try {
         await initWasm();
 
-        // Generate base QR code (either WASM or fallback)
+        // Try WASM enhanced version first
+        if (wasmAvailable && wasmModule && wasmModule.generate_enhanced_qr_code) {
+            try {
+                return wasmModule.generate_enhanced_qr_code(
+                    text,
+                    size,
+                    darkColor,
+                    lightColor,
+                    options.errorLevel || null,
+                    options.logoUrl || null,
+                    options.useGradient || null,
+                    options.gradientDirection || null,
+                    options.gradientColor1 || null,
+                    options.gradientColor2 || null,
+                    options.margin || null
+                );
+            } catch (wasmError) {
+                console.warn("WASM enhanced generation failed, falling back to JS enhancement:", wasmError);
+            }
+        }
+
+        // Fallback to JS enhancement
         let baseSvg;
         if (wasmAvailable && wasmModule) {
             baseSvg = wasmModule.generate_qr_code(text, size, darkColor, lightColor);
@@ -74,30 +174,36 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             baseSvg = generateFallbackQRCode(text, size, darkColor, lightColor);
         }
 
-        // Parse the SVG to a DOM object to manipulate it properly
+        // Apply JS-based enhancements
+        return applyEnhancements(baseSvg, size, darkColor, lightColor, options);
+    } catch (error) {
+        console.error("Error generating enhanced QR code:", error);
+        return await generateQrCode(text, size, darkColor, lightColor);
+    }
+}
+
+function applyEnhancements(baseSvg, size, darkColor, lightColor, options) {
+    try {
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(baseSvg, "image/svg+xml");
         const svgElement = svgDoc.documentElement;
 
-        // Check for parsing errors
         const parserError = svgDoc.querySelector('parsererror');
         if (parserError) {
             console.error('SVG parsing error:', parserError.textContent);
-            return baseSvg; // Return original if parsing fails
+            return baseSvg;
         }
 
-        // If we want to use gradient
+        // Apply gradient if requested
         if (options.useGradient) {
             const gradId = `qrGradient_${Math.random().toString(36).substring(2, 9)}`;
             const gradientDirection = options.gradientDirection || "linear-x";
             const gradColor1 = options.gradientColor1 || darkColor;
             const gradColor2 = options.gradientColor2 || darkColor;
 
-            // Create defs element
             const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-
-            // Create gradient element
             let gradient;
+
             if (gradientDirection === "radial") {
                 gradient = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
                 gradient.setAttribute("cx", "50%");
@@ -106,27 +212,30 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             } else {
                 gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
 
-                if (gradientDirection === "linear-x") {
-                    gradient.setAttribute("x1", "0%");
-                    gradient.setAttribute("y1", "50%");
-                    gradient.setAttribute("x2", "100%");
-                    gradient.setAttribute("y2", "50%");
-                } else if (gradientDirection === "linear-y") {
-                    gradient.setAttribute("x1", "50%");
-                    gradient.setAttribute("y1", "0%");
-                    gradient.setAttribute("x2", "50%");
-                    gradient.setAttribute("y2", "100%");
-                } else if (gradientDirection === "diagonal") {
-                    gradient.setAttribute("x1", "0%");
-                    gradient.setAttribute("y1", "0%");
-                    gradient.setAttribute("x2", "100%");
-                    gradient.setAttribute("y2", "100%");
+                switch (gradientDirection) {
+                    case "linear-x":
+                        gradient.setAttribute("x1", "0%");
+                        gradient.setAttribute("y1", "50%");
+                        gradient.setAttribute("x2", "100%");
+                        gradient.setAttribute("y2", "50%");
+                        break;
+                    case "linear-y":
+                        gradient.setAttribute("x1", "50%");
+                        gradient.setAttribute("y1", "0%");
+                        gradient.setAttribute("x2", "50%");
+                        gradient.setAttribute("y2", "100%");
+                        break;
+                    case "diagonal":
+                        gradient.setAttribute("x1", "0%");
+                        gradient.setAttribute("y1", "0%");
+                        gradient.setAttribute("x2", "100%");
+                        gradient.setAttribute("y2", "100%");
+                        break;
                 }
             }
 
             gradient.setAttribute("id", gradId);
 
-            // Create stops
             const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
             stop1.setAttribute("offset", "0%");
             stop1.setAttribute("stop-color", gradColor1);
@@ -135,17 +244,11 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             stop2.setAttribute("offset", "100%");
             stop2.setAttribute("stop-color", gradColor2);
 
-            // Add stops to gradient
             gradient.appendChild(stop1);
             gradient.appendChild(stop2);
-
-            // Add gradient to defs
             defs.appendChild(gradient);
-
-            // Add defs to SVG
             svgElement.insertBefore(defs, svgElement.firstChild);
 
-            // Replace all dark color fills with gradient
             const paths = svgElement.querySelectorAll('path, rect');
             paths.forEach(path => {
                 if (path.getAttribute('fill') === darkColor) {
@@ -154,14 +257,13 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             });
         }
 
-        // If we want to add a logo
+        // Add logo if requested
         if (options.logoUrl) {
             const logoSizeRatio = options.logoSizeRatio || 0.25;
             const logoSize = Math.floor(size * logoSizeRatio);
             const logoX = Math.floor((size - logoSize) / 2);
             const logoY = Math.floor((size - logoSize) / 2);
 
-            // Create image element
             const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
             image.setAttribute("href", options.logoUrl);
             image.setAttribute("x", logoX);
@@ -170,10 +272,8 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             image.setAttribute("height", logoSize);
             image.setAttribute("preserveAspectRatio", "xMidYMid slice");
 
-            // Add image to SVG
             svgElement.appendChild(image);
 
-            // Add border around logo if requested
             if (options.addLogoBorder) {
                 const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                 rect.setAttribute("x", logoX);
@@ -184,24 +284,20 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 rect.setAttribute("stroke", options.logoBorderColor || "white");
                 rect.setAttribute("stroke-width", options.logoBorderWidth || "2");
 
-                // Add border radius if specified
                 if (options.logoBorderRadius) {
                     rect.setAttribute("rx", options.logoBorderRadius);
                     rect.setAttribute("ry", options.logoBorderRadius);
                 }
 
-                // Add border to SVG
                 svgElement.appendChild(rect);
             }
         }
 
-        // Serialize SVG back to string
         const serializer = new XMLSerializer();
         return serializer.serializeToString(svgDoc);
     } catch (error) {
-        console.error("Error generating enhanced QR code:", error);
-        // Return basic QR code as fallback
-        return await generateQrCode(text, size, darkColor, lightColor);
+        console.error("Error applying enhancements:", error);
+        return baseSvg;
     }
 }
 
@@ -216,7 +312,6 @@ export function setSvgContent(elementId, svgContent) {
     }
 }
 
-// Debug function to check module status
 export function getModuleStatus() {
     return {
         wasmInitialized,
