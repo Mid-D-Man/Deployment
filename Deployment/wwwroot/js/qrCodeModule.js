@@ -145,25 +145,24 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
     try {
         await initWasm();
 
-        // Generate base QR code
-        const baseSvg = generateQrCode(text, size, darkColor, lightColor);
+        // Generate base QR code using the available function
+        const baseSvg = await generateQrCode(text, size, darkColor, lightColor);
 
-        // Parse the SVG to a DOM object to manipulate it properly
+        // Parse the SVG into a DOM object for manipulation
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(baseSvg, "image/svg+xml");
         const svgElement = svgDoc.documentElement;
 
-        // If we want to use gradient
+        // If gradient is requested, apply the gradient enhancements
         if (options.useGradient) {
             const gradId = `qrGradient_${Math.random().toString(36).substring(2, 9)}`;
             const gradientDirection = options.gradientDirection || "linear-x";
             const gradColor1 = options.gradientColor1 || darkColor;
             const gradColor2 = options.gradientColor2 || darkColor;
 
-            // Create defs element
+            // Create the defs element
             const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
 
-            // Create gradient element
             let gradient;
             if (gradientDirection === "radial") {
                 gradient = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
@@ -172,7 +171,6 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 gradient.setAttribute("r", "50%");
             } else {
                 gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
-
                 if (gradientDirection === "linear-x") {
                     gradient.setAttribute("x1", "0%");
                     gradient.setAttribute("y1", "50%");
@@ -191,7 +189,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 }
             }
 
-            // Set gradient id and create gradient stops
+            // Set gradient id and create stops
             gradient.setAttribute("id", gradId);
 
             const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
@@ -206,11 +204,10 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             gradient.appendChild(stop2);
             defs.appendChild(gradient);
 
-            // Add defs as the first child of the SVG element
+            // Insert defs as the first child of the SVG
             svgElement.insertBefore(defs, svgElement.firstChild);
 
-            // Replace dark color fills with the gradient reference,
-            // targeting only <path> and <rect> elements as before.
+            // Replace dark color fills with the gradient reference on <path> and <rect> elements
             const targets = svgElement.querySelectorAll('path, rect');
             targets.forEach(element => {
                 const fillColor = element.getAttribute('fill');
@@ -219,8 +216,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 }
             });
 
-            // In case there are inline style attributes that define the fill,
-            // update them with proper parentheses for safe evaluation.
+            // Also update inline style attributes if they contain the dark color fill
             const styledElements = svgElement.querySelectorAll('[style*="fill"]');
             styledElements.forEach(element => {
                 const style = element.getAttribute('style');
@@ -230,14 +226,13 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             });
         }
 
-        // If we want to add a logo
+        // If a logo is requested, add the logo to the QR code
         if (options.logoUrl) {
             const logoSizeRatio = options.logoSizeRatio || 0.25;
             const logoSize = Math.floor(size * logoSizeRatio);
             const logoX = Math.floor((size - logoSize) / 2);
             const logoY = Math.floor((size - logoSize) / 2);
 
-            // Create image element
             const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
             image.setAttribute("href", options.logoUrl);
             image.setAttribute("x", logoX);
@@ -248,7 +243,6 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
 
             svgElement.appendChild(image);
 
-            // Add border around logo if requested
             if (options.addLogoBorder) {
                 const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                 rect.setAttribute("x", logoX);
@@ -268,7 +262,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             }
         }
 
-        // Serialize SVG back to string
+        // Serialize the modified SVG and return it as a string
         const serializer = new XMLSerializer();
         return serializer.serializeToString(svgDoc);
     } catch (error) {
