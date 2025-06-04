@@ -145,10 +145,17 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
     try {
         await initWasm();
 
+        console.log('Enhanced QR generation:', {
+            wasmAvailable,
+            hasWasmModule: !!wasmModule,
+            options
+        });
+
         // Try WASM enhanced version first
         if (wasmAvailable && wasmModule && wasmModule.generate_enhanced_qr_code) {
             try {
-                return wasmModule.generate_enhanced_qr_code(
+                console.log('Using WASM enhanced generation');
+                const result = wasmModule.generate_enhanced_qr_code(
                     text,
                     size,
                     darkColor,
@@ -161,21 +168,31 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                     options.gradientColor2 || null,
                     options.margin || null
                 );
+                console.log('WASM enhanced result length:', result.length);
+                return result;
             } catch (wasmError) {
                 console.warn("WASM enhanced generation failed, falling back to JS enhancement:", wasmError);
             }
         }
 
         // Fallback to JS enhancement
+        console.log('Using JS-based enhancement');
         let baseSvg;
         if (wasmAvailable && wasmModule) {
+            console.log('Getting base SVG from WASM');
             baseSvg = wasmModule.generate_qr_code(text, size, darkColor, lightColor);
         } else {
+            console.log('Using fallback SVG generation');
             baseSvg = generateFallbackQRCode(text, size, darkColor, lightColor);
         }
 
+        console.log('Base SVG length:', baseSvg.length);
+
         // Apply JS-based enhancements
-        return applyEnhancements(baseSvg, size, darkColor, lightColor, options);
+        const enhanced = applyEnhancements(baseSvg, size, darkColor, lightColor, options);
+        console.log('Enhanced SVG length:', enhanced.length);
+
+        return enhanced;
     } catch (error) {
         console.error("Error generating enhanced QR code:", error);
         return await generateQrCode(text, size, darkColor, lightColor);
@@ -249,10 +266,24 @@ function applyEnhancements(baseSvg, size, darkColor, lightColor, options) {
             defs.appendChild(gradient);
             svgElement.insertBefore(defs, svgElement.firstChild);
 
-            const paths = svgElement.querySelectorAll('path, rect');
-            paths.forEach(path => {
-                if (path.getAttribute('fill') === darkColor) {
-                    path.setAttribute('fill', `url(#${gradId})`);
+            // FIX: Target all dark-colored elements, not just paths
+            const allElements = svgElement.querySelectorAll('path, rect, circle, polygon');
+            allElements.forEach(element => {
+                const fillColor = element.getAttribute('fill');
+                // Check if element has the dark color (exact match or similar)
+                if (fillColor === darkColor ||
+                    (fillColor && fillColor.toLowerCase() === darkColor.toLowerCase()) ||
+                    element.style.fill === darkColor) {
+                    element.setAttribute('fill', `url(#${gradId})`);
+                }
+            });
+
+            // FIX: Also check for elements with dark color in style attribute
+            const styledElements = svgElement.querySelectorAll('[style*="fill"]');
+            styledElements.forEach(element => {
+                const style = element.getAttribute('style');
+                if (style && style.includes(`fill:${darkColor}`) || style.includes(`fill: ${darkColor}`)) {
+                    element.style.fill = `url(#${gradId})`;
                 }
             });
         }
@@ -263,6 +294,16 @@ function applyEnhancements(baseSvg, size, darkColor, lightColor, options) {
             const logoSize = Math.floor(size * logoSizeRatio);
             const logoX = Math.floor((size - logoSize) / 2);
             const logoY = Math.floor((size - logoSize) / 2);
+
+            // Add white background for logo
+            const logoBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            logoBg.setAttribute("x", logoX - 5);
+            logoBg.setAttribute("y", logoY - 5);
+            logoBg.setAttribute("width", logoSize + 10);
+            logoBg.setAttribute("height", logoSize + 10);
+            logoBg.setAttribute("fill", "white");
+            logoBg.setAttribute("rx", "5");
+            svgElement.appendChild(logoBg);
 
             const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
             image.setAttribute("href", options.logoUrl);
