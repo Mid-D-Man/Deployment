@@ -9,7 +9,7 @@ using AirCode.Services.Cryptography;
 namespace AirCode
 {
     /// <summary>
-    /// Class for encoding and decoding secure QR codes with dual-purpose functionality:
+    /// Class for encodin and decoding secure QR codes with dual-purpose functionality:
     /// 1. Redirects external scanners to a website
     /// 2. Contains embedded session data only readable by the app
     /// </summary>
