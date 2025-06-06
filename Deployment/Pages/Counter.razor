@@ -19,12 +19,17 @@
     {
         currentCount++;
     }
-
+    private void NavigateToViewer()
+    {
+        Navigation.NavigateTo("viewer", forceLoad: false);
+    }
+    /* works
     private void NavigateToViewer()
     {
         var relativePath = Navigation.ToAbsoluteUri("viewer").ToString();
         Navigation.NavigateTo(relativePath);
     }
+    */
 }
 
 <style>
