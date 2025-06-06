@@ -1,4 +1,5 @@
 ﻿@page "/counter"
+@inject NavigationManager Navigation
 
 <PageTitle>Counter</PageTitle>
 
@@ -6,7 +7,10 @@
 
 <p role="status">Current count: @currentCount</p>
 
-<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
+<div class="button-group">
+    <button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
+    <button class="btn btn-success" @onclick="NavigateToViewer">Go to Viewer</button>
+</div>
 
 @code {
     private int currentCount = 0;
@@ -16,4 +20,42 @@
         currentCount++;
     }
 
+    private void NavigateToViewer()
+    {
+        Navigation.NavigateTo("/viewer");
+    }
 }
+
+<style>
+    .button-group {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .button-group button {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+        background-color: #007bff;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: #0056b3;
+    }
+
+    .btn-success {
+        background-color: #28a745;
+        color: white;
+    }
+
+    .btn-success:hover {
+        background-color: #1e7e34;
+    }
+</style>

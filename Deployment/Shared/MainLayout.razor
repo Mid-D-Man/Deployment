@@ -1,17 +1,76 @@
 ﻿@inherits LayoutComponentBase
+@inject IJSRuntime JSRuntime
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu/>
+    <!-- Menu Type Switcher -->
+    <div class="menu-switcher">
+        <label for="menu-select">Navigation:</label>
+        <select id="menu-select" @onchange="OnMenuTypeChanged" value="@currentMenuType">
+            <option value="@MenuType.SideNav">Side Navigation</option>
+            <option value="@MenuType.ClientMenu">Client Menu</option>
+        </select>
     </div>
 
-    <main>
+    @if (currentMenuType == MenuType.SideNav)
+    {
+        <!-- Original Layout with Sidebar -->
+        <div class="sidebar">
+            <NavMenu/>
+        </div>
+    }
+
+    <main class="@GetMainClass()">
         <div class="top-row px-4">
             <a href="https://docs.microsoft.com/aspnet/" target="_blank">About</a>
         </div>
 
-        <article class="content px-4">
+        <article class="content px-4 @GetContentClass()">
             @Body
         </article>
     </main>
+
+    @if (currentMenuType == MenuType.ClientMenu)
+    {
+        <!-- Client Menu at Bottom -->
+        <ClientMenu />
+    }
 </div>
+
+@code {
+    public enum MenuType
+    {
+        SideNav,
+        ClientMenu
+    }
+
+    private MenuType currentMenuType = MenuType.SideNav;
+
+    private async Task OnMenuTypeChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<MenuType>(e.Value?.ToString(), out var newMenuType))
+        {
+            currentMenuType = newMenuType;
+            StateHasChanged();
+            
+            // Update body padding for client menu
+            if (currentMenuType == MenuType.ClientMenu)
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.style.paddingBottom = '80px'");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.style.paddingBottom = '0'");
+            }
+        }
+    }
+
+    private string GetMainClass()
+    {
+        return currentMenuType == MenuType.SideNav ? "with-sidebar" : "full-width";
+    }
+
+    private string GetContentClass()
+    {
+        return currentMenuType == MenuType.ClientMenu ? "with-bottom-menu" : "";
+    }
+}

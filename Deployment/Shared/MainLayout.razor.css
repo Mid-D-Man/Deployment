@@ -1,11 +1,40 @@
+.menu-switcher {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1001;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0.5rem;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.menu-switcher label {
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+    font-weight: bold;
+}
+
+.menu-switcher select {
+    padding: 0.25rem;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
 .page {
     position: relative;
     display: flex;
     flex-direction: column;
+    min-height: 100vh;
 }
 
-main {
+.with-sidebar {
     flex: 1;
+}
+
+.full-width {
+    flex: 1;
+    width: 100%;
 }
 
 .sidebar {
@@ -21,38 +50,43 @@ main {
     align-items: center;
 }
 
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        white-space: nowrap;
-        margin-left: 1.5rem;
-        text-decoration: none;
-    }
+.top-row ::deep a, .top-row ::deep .btn-link {
+    white-space: nowrap;
+    margin-left: 1.5rem;
+    text-decoration: none;
+}
 
-    .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
-        text-decoration: underline;
-    }
+.top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
+    text-decoration: underline;
+}
 
-    .top-row ::deep a:first-child {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
+.with-bottom-menu {
+    padding-bottom: 80px;
+}
 
 @media (max-width: 640.98px) {
     .top-row:not(.auth) {
         display: none;
     }
 
-    .top-row.auth {
-        justify-content: space-between;
-    }
-
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        margin-left: 0;
+    .menu-switcher {
+        top: 5px;
+        right: 5px;
+        font-size: 0.7rem;
     }
 }
 
 @media (min-width: 641px) {
     .page {
         flex-direction: row;
+    }
+
+    .page:has(.sidebar) {
+        flex-direction: row;
+    }
+
+    .page:not(:has(.sidebar)) {
+        flex-direction: column;
     }
 
     .sidebar {
@@ -68,13 +102,7 @@ main {
         z-index: 1;
     }
 
-    .top-row.auth ::deep a:first-child {
-        flex: 1;
-        text-align: right;
-        width: 0;
-    }
-
-    .top-row, article {
+    .with-sidebar, .with-sidebar .content {
         padding-left: 2rem !important;
         padding-right: 1.5rem !important;
     }
