@@ -21,7 +21,9 @@
     }
     private void NavigateToViewer()
     {
-        Navigation.NavigateTo("viewer", forceLoad: false);
+        var basePath = Navigation.BaseUri.TrimEnd('/');
+        var repositoryName = "Deployment"; // Extract from base URI if needed
+        Navigation.NavigateTo($"{basePath}/{repositoryName}/viewer");
     }
     /* works
     private void NavigateToViewer()
