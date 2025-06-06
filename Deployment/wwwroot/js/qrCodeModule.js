@@ -160,9 +160,8 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             const gradColor1 = options.gradientColor1 || darkColor;
             const gradColor2 = options.gradientColor2 || darkColor;
 
-            // Create the defs element and gradient element based on direction
+            // Create the defs element and gradient definition
             const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-
             let gradient;
             if (gradientDirection === "radial") {
                 gradient = document.createElementNS("http://www.w3.org/2000/svg", "radialGradient");
@@ -189,7 +188,6 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 }
             }
 
-            // Set id and add the color stops
             gradient.setAttribute("id", gradId);
             const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
             stop1.setAttribute("offset", "0%");
@@ -215,7 +213,7 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
                 }
             });
 
-            // Also, update any inline style definitions for fill
+            // Also update inline style definitions for fill
             const styledElements = svgElement.querySelectorAll('[style*="fill"]');
             styledElements.forEach(element => {
                 const style = element.getAttribute('style');
@@ -225,20 +223,20 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             });
         }
 
-        // If a logo is requested, add the logo to the QR code.
-        // If the QR code drawing area has its own margin (like in the fallback,
-        // where margin = cellSize * 2), the logo can be centered within that area.
-        // Provide the margin via options.qrMargin (default is 0 if not provided).
+        // If a logo is requested, add the logo on top of the QR code.
+        // We create a dedicated group for logo elements so that they are painted last.
         if (options.logoUrl) {
+            const logoGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            // Use a provided margin to account for QR code drawing area if needed.
             const logoSizeRatio = options.logoSizeRatio || 0.25;
             const logoSize = Math.floor(size * logoSizeRatio);
-            const qrMargin = options.qrMargin || 0;  // set to fallback margin if needed
+            const qrMargin = options.qrMargin || 0; // Set this if your QR code has a visible margin.
             const effectiveSize = size - 2 * qrMargin;
             const logoX = Math.floor(qrMargin + (effectiveSize - logoSize) / 2);
             const logoY = Math.floor(qrMargin + (effectiveSize - logoSize) / 2);
 
             const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
-            // Modern browsers support the simple "href", but older implementations may require "xlink:href"
+            // Set both href and xlink:href for compatibility.
             image.setAttribute("href", options.logoUrl);
             image.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", options.logoUrl);
             image.setAttribute("x", logoX);
@@ -247,25 +245,26 @@ export async function generateEnhancedQrCode(text, size, darkColor, lightColor, 
             image.setAttribute("height", logoSize);
             image.setAttribute("preserveAspectRatio", "xMidYMid slice");
 
-            svgElement.appendChild(image);
+            logoGroup.appendChild(image);
 
             if (options.addLogoBorder) {
-                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                rect.setAttribute("x", logoX);
-                rect.setAttribute("y", logoY);
-                rect.setAttribute("width", logoSize);
-                rect.setAttribute("height", logoSize);
-                rect.setAttribute("fill", "none");
-                rect.setAttribute("stroke", options.logoBorderColor || "white");
-                rect.setAttribute("stroke-width", options.logoBorderWidth || "2");
-
+                const borderRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                borderRect.setAttribute("x", logoX);
+                borderRect.setAttribute("y", logoY);
+                borderRect.setAttribute("width", logoSize);
+                borderRect.setAttribute("height", logoSize);
+                borderRect.setAttribute("fill", "none");
+                borderRect.setAttribute("stroke", options.logoBorderColor || "white");
+                borderRect.setAttribute("stroke-width", options.logoBorderWidth || "2");
                 if (options.logoBorderRadius) {
-                    rect.setAttribute("rx", options.logoBorderRadius);
-                    rect.setAttribute("ry", options.logoBorderRadius);
+                    borderRect.setAttribute("rx", options.logoBorderRadius);
+                    borderRect.setAttribute("ry", options.logoBorderRadius);
                 }
-
-                svgElement.appendChild(rect);
+                logoGroup.appendChild(borderRect);
             }
+
+            // Append the logo group last to ensure it appears on top
+            svgElement.appendChild(logoGroup);
         }
 
         // Serialize the modified SVG and return it as a string
