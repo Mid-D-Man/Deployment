@@ -22,7 +22,8 @@
 
     private void NavigateToViewer()
     {
-        Navigation.NavigateTo("/viewer");
+        var relativePath = Navigation.ToAbsoluteUri("viewer").ToString();
+        Navigation.NavigateTo(relativePath);
     }
 }
 
