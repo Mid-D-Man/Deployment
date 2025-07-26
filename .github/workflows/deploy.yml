@@ -2,15 +2,23 @@ name: Deploy Blazor WASM PWA to GitHub Pages
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,65 +29,98 @@ jobs:
         with:
           dotnet-version: '7.0.x'
 
-      - name: Restore and Build
-        run: |
-          dotnet restore
-          dotnet build --configuration Release --no-restore
+      - name: Restore dependencies
+        run: dotnet restore
 
-      - name: Publish PWA
-        run: dotnet publish Deployment/Deployment.csproj -c Release -o dist
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
 
-      - name: Fix GitHub Pages Paths
+      - name: Publish Blazor WASM
         run: |
-          mkdir -p pages
-          cp -r dist/wwwroot/* pages/
+          if [ -f "Deployment/Deployment.csproj" ]; then
+            echo "Publishing Deployment/Deployment.csproj"
+            dotnet publish Deployment/Deployment.csproj --configuration Release --no-build --output ./dist
+          else
+            echo "Looking for Blazor WASM project..."
+            find . -name "*.csproj" -exec grep -l "Microsoft.AspNetCore.Components.WebAssembly" {} \; | head -1 | xargs -I {} dotnet publish {} --configuration Release --no-build --output ./dist
+          fi
+
+      - name: Prepare for GitHub Pages
+        run: |
+          mkdir -p ./pages
           
-          # Fix base href
-          sed -i 's|<base href="/" />|<base href="/Deployment/" />|g' pages/index.html
-          
-          # Critical: Fix ALL manifest references
-          sed -i 's|href="manifest\.json"|href="manifest.webmanifest"|g' pages/index.html
-          sed -i 's|fetch('\''./manifest\.json'\'')|fetch('\''./manifest.webmanifest'\'')|g' pages/index.html
-          
-          # Rename manifest and fix paths
-          if [ -f "pages/manifest.json" ]; then
-            mv pages/manifest.json pages/manifest.webmanifest
-            sed -i 's|"start_url": "/"|"start_url": "/Deployment/"|g' pages/manifest.webmanifest
-            sed -i 's|"scope": "/"|"scope": "/Deployment/"|g' pages/manifest.webmanifest
+          if [ -d "./dist/wwwroot" ]; then
+            cp -r ./dist/wwwroot/* ./pages/
+          else
+            echo "ERROR: wwwroot not found"
+            exit 1
           fi
           
-          # Fix offline.html base href
-          if [ -f "pages/offline.html" ]; then
-            sed -i 's|<base href="/" />|<base href="/Deployment/" />|g' pages/offline.html
-          fi
-          
-          # Use published service worker
-          if [ -f "pages/service-worker.published.js" ]; then
-            cp pages/service-worker.published.js pages/service-worker.js
-          fi
+          # Critical: Add .nojekyll to prevent Jekyll processing
+          touch ./pages/.nojekyll
           
           # Create 404.html for SPA routing
-          cp pages/index.html pages/404.html
+          cp ./pages/index.html ./pages/404.html
           
-          # Disable Jekyll
-          touch pages/.nojekyll
+          # Update base href for GitHub Pages subpath
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
           
-          # Fix WASM MIME types
-          cat > pages/_headers << 'EOF'
+          # Fix MIME type issues - Add _headers file for Netlify-style hosting
+          cat > ./pages/_headers << 'EOF'
           /*.wasm
             Content-Type: application/wasm
-          /*.dll
-            Content-Type: application/octet-stream
-          /*.webmanifest
-            Content-Type: application/manifest+json
           /*.js
             Content-Type: application/javascript
           EOF
+          
+          # Create .htaccess for Apache servers
+          cat > ./pages/.htaccess << 'EOF'
+          AddType application/wasm .wasm
+          AddType application/javascript .js
+          
+          # SPA routing fallback
+          RewriteEngine On
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteRule . /index.html [L]
+          EOF
+          
+          # Verify WASM files exist and set proper permissions
+          echo "=== Verifying WASM files ==="
+          find ./pages -name "*.wasm" -type f -exec echo "Found WASM file: {}" \; -exec file {} \;
+          
+          # List all files in wasm directory for debugging
+          if [ -d "./pages/wasm" ]; then
+            echo "Contents of wasm directory:"
+            ls -la ./pages/wasm/
+          else
+            echo "No wasm directory found"
+          fi
+          # im no longer using zxing 
+          # Verify ZXing files are properly copied
+          echo "=== Verifying ZXing deployment ==="
+          if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
+            echo "✅ ZXing JS file found"
+            file ./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js
+          else
+            echo "❌ ZXing JS file missing"
+            find ./pages -name "*.js" | grep -i zxing || echo "No ZXing JS files found"
+          fi
 
-      - name: Upload Pages Artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./pages
 
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

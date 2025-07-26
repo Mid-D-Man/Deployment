@@ -1,17 +1,4 @@
-// Development service worker - disabled caching
-const CACHE_NAME = 'blazor-offline-cache';
-
-self.addEventListener('install', event => {
-    console.log('Service worker installing...');
-    self.skipWaiting();
-});
-
-self.addEventListener('activate', event => {
-    console.log('Service worker activating...');
-    event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('fetch', event => {
-    // Pass through all requests in development
-    event.respondWith(fetch(event.request));
-});
+// In development, always fetch from the network and do not enable offline support.
+// This is because caching would make development more difficult (changes would not
+// be reflected on the first load after each change).
+self.addEventListener('fetch', () => { });
