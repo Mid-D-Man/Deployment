@@ -2,23 +2,15 @@ name: Deploy Blazor WASM PWA to GitHub Pages
 
 on:
   push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+    branches: [ master ]
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,155 +21,61 @@ jobs:
         with:
           dotnet-version: '7.0.x'
 
-      - name: Restore dependencies
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
-
-      - name: Publish Blazor WASM
+      - name: Restore and Build
         run: |
-          if [ -f "Deployment/Deployment.csproj" ]; then
-            echo "Publishing Deployment/Deployment.csproj"
-            dotnet publish Deployment/Deployment.csproj --configuration Release --no-build --output ./dist
-          else
-            echo "Looking for Blazor WASM project..."
-            find . -name "*.csproj" -exec grep -l "Microsoft.AspNetCore.Components.WebAssembly" {} \; | head -1 | xargs -I {} dotnet publish {} --configuration Release --no-build --output ./dist
-          fi
+          dotnet restore
+          dotnet build --configuration Release --no-restore
 
-      - name: Prepare for GitHub Pages
+      - name: Publish PWA
+        run: dotnet publish Deployment/Deployment.csproj -c Release -o dist
+
+      - name: Prepare GitHub Pages
         run: |
-          mkdir -p ./pages
+          mkdir -p pages
+          cp -r dist/wwwroot/* pages/
           
-          if [ -d "./dist/wwwroot" ]; then
-            cp -r ./dist/wwwroot/* ./pages/
-          else
-            echo "ERROR: wwwroot not found"
-            exit 1
+          # Essential GitHub Pages fixes
+          touch pages/.nojekyll
+          cp pages/index.html pages/404.html
+          
+          # Fix base href for subpath
+          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' pages/index.html pages/404.html
+          
+          # Rename manifest for GitHub Pages compatibility
+          if [ -f "pages/manifest.json" ]; then
+            mv pages/manifest.json pages/manifest.webmanifest
+            sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' pages/index.html pages/404.html
           fi
           
-          # Critical: Add .nojekyll to prevent Jekyll processing
-          touch ./pages/.nojekyll
-          
-          # Create 404.html for SPA routing
-          cp ./pages/index.html ./pages/404.html
-          
-          # Update base href for GitHub Pages subpath
-          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
-          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
-          
-          # ===== CRITICAL PWA FIXES =====
-          
-          # 1. Use the PUBLISHED service worker (not the dev one)
-          if [ -f "./pages/service-worker.published.js" ]; then
-            echo "✅ Using published service worker"
-            mv ./pages/service-worker.published.js ./pages/service-worker.js
-          else
-            echo "❌ Published service worker not found"
-            ls -la ./pages/service-worker*
+          # Update manifest paths
+          if [ -f "pages/manifest.webmanifest" ]; then
+            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' pages/manifest.webmanifest
+            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' pages/manifest.webmanifest
           fi
           
-          # 2. Fix service worker paths for GitHub Pages subpath
-          if [ -f "./pages/service-worker.js" ]; then
-            # Update service worker to use correct base path
-            sed -i "s|const offlineAssetsInclude = \[ \];|const offlineAssetsInclude = \[ /^\\/${{ github.event.repository.name }}\\// \];|g" ./pages/service-worker.js
-            sed -i "s|const offlineAssetsExclude = \[ \];|const offlineAssetsExclude = \[ /\\/${{ github.event.repository.name }}\\/service-worker\\.js$/ \];|g" ./pages/service-worker.js
-          
-            # Update cache name to include repo name
-            sed -i "s|'offline-cache-|'${{ github.event.repository.name }}-offline-cache-|g" ./pages/service-worker.js
-            echo "✅ Service worker paths updated for GitHub Pages"
+          # Use published service worker
+          if [ -f "pages/service-worker.published.js" ]; then
+            mv pages/service-worker.published.js pages/service-worker.js
           fi
           
-          # 3. CRITICAL: Rename manifest.json to manifest.webmanifest for GitHub Pages
-          if [ -f "./pages/manifest.json" ]; then
-            mv ./pages/manifest.json ./pages/manifest.webmanifest
-            echo "✅ Renamed manifest.json to manifest.webmanifest"
-          
-            # Update index.html to reference .webmanifest
-            sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' ./pages/index.html
-            sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' ./pages/404.html
-            echo "✅ Updated manifest references in HTML"
-          fi
-          
-          # 4. Update manifest paths for GitHub Pages subpath
-          if [ -f "./pages/manifest.webmanifest" ]; then
-            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
-            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
-            echo "✅ Manifest start_url and scope updated"
-          fi
-          
-          # 5. Fix WASM MIME types
-          cat > ./pages/_headers << 'EOF'
+          # Critical: Create WASM MIME type headers
+          cat > pages/_headers << 'EOF'
           /*.wasm
             Content-Type: application/wasm
-          /*.js
-            Content-Type: application/javascript
+          /*.dll
+            Content-Type: application/octet-stream
           /*.webmanifest
             Content-Type: application/manifest+json
-          /*
-            X-Frame-Options: DENY
-            X-Content-Type-Options: nosniff
           EOF
-          
-          # 6. Apache .htaccess for WASM MIME types
-          cat > ./pages/.htaccess << 'EOF'
-          AddType application/wasm .wasm
-          AddType application/javascript .js
-          AddType application/manifest+json .webmanifest
-          
-          # SPA routing fallback  
-          RewriteEngine On
-          RewriteCond %{REQUEST_FILENAME} !-f
-          RewriteCond %{REQUEST_FILENAME} !-d
-          RewriteRule . /index.html [L]
-          
-          # Security headers
-          Header always set X-Frame-Options DENY
-          Header always set X-Content-Type-Options nosniff
-          EOF
-          
-          # 7. Verify PWA files are properly deployed
-          echo "=== PWA Deployment Verification ==="
-          echo "Service Worker:"
-          if [ -f "./pages/service-worker.js" ]; then
-            echo "✅ Service worker deployed"
-            head -5 ./pages/service-worker.js
-          else
-            echo "❌ Service worker missing"
-          fi
-          
-          echo "Manifest:"
-          if [ -f "./pages/manifest.webmanifest" ]; then
-            echo "✅ Manifest deployed"
-            cat ./pages/manifest.webmanifest
-          else  
-            echo "❌ Manifest missing"
-          fi
-          
-          echo "WASM files:"
-          find ./pages -name "*.wasm" -type f -exec echo "Found: {}" \;
-          
-          echo "Service Worker Assets:"
-          if [ -f "./pages/service-worker-assets.js" ]; then
-            echo "✅ SW assets manifest found"
-            wc -l ./pages/service-worker-assets.js
-          else
-            echo "❌ SW assets manifest missing"
-          fi
 
-      - name: Upload Pages artifact
+      - name: Upload Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./pages
 
-  deploy:
-    if: github.ref == 'refs/heads/master'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        environment:
+          name: github-pages
+          url: ${{ steps.deployment.outputs.page_url }}

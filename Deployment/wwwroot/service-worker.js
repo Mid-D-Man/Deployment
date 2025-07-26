@@ -1,177 +1,124 @@
-// Production service worker for Blazor WASM PWA
-// Replace your current service-worker.js content with this for production
+// Blazor WASM PWA Service Worker - Optimized for Offline
+const CACHE_NAME = 'blazor-pwa-v1';
+const BASE_PATH = '/Deployment/';
 
-const VERSION = 'v1.0.0';
-const CACHE_NAME = `Deployment-${VERSION}`;
-const BASE_URL = '/Deployment/'; // Update this to match your GitHub repo name
+// Critical Blazor assets that MUST be cached for offline boot
+const CRITICAL_ASSETS = [
+    `${BASE_PATH}`,
+    `${BASE_PATH}index.html`,
+    `${BASE_PATH}manifest.webmanifest`,
+    `${BASE_PATH}_framework/blazor.webassembly.js`,
+    `${BASE_PATH}_framework/blazor.boot.json`,
+    `${BASE_PATH}_framework/dotnet.wasm`,
+    `${BASE_PATH}_framework/dotnet.js`
+];
 
-// Import the assets manifest - this is generated during build
-self.importScripts('./service-worker-assets.js');
+// Import service worker assets if available
+try {
+    self.importScripts('./service-worker-assets.js');
+} catch (e) {
+    console.warn('Service worker assets not found, using fallback');
+}
 
-// Configure offline assets
-const offlineAssetsInclude = [/^\/Deployment\//];
-const offlineAssetsExclude = [/\/Deployment\/service-worker\.js$/];
-
-// Assets to precache
-const assetsManifest = self.assetsManifest || {
-    assets: [
-        { url: '/', hash: 'default' },
-        { url: '/index.html', hash: 'default' },
-        { url: '/manifest.json', hash: 'default' }
-    ]
-};
-
-// Install event - precache critical assets
 self.addEventListener('install', event => {
-    console.log('Service Worker installing...');
+    console.log('SW: Installing');
 
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => {
-                console.log('Opened cache');
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE_NAME);
 
-                // Get the assets to precache from the manifest
-                const urlsToCache = assetsManifest.assets
-                    .filter(asset => asset.url.startsWith('/Deployment/') || asset.url === '/')
-                    .map(asset => {
-                        let url = asset.url;
-                        if (url === '/') url = '/Deployment/';
-                        return new URL(url, self.location).href;
-                    });
-
-                console.log('Caching assets:', urlsToCache);
-                return cache.addAll(urlsToCache);
-            })
-            .then(() => {
-                console.log('All assets cached');
-                return self.skipWaiting();
-            })
-            .catch(error => {
-                console.error('Cache installation failed:', error);
-            })
-    );
-});
-
-// Activate event - clean up old caches
-self.addEventListener('activate', event => {
-    console.log('Service Worker activating...');
-
-    event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheName !== CACHE_NAME) {
-                        console.log('Deleting old cache:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        }).then(() => {
-            console.log('Service Worker activated');
-            return self.clients.claim();
-        })
-    );
-});
-
-// Fetch event - implement caching strategy
-self.addEventListener('fetch', event => {
-    const url = new URL(event.request.url);
-
-    // Only handle same-origin requests
-    if (url.origin !== self.location.origin) {
-        return;
-    }
-
-    // Skip service worker requests
-    if (offlineAssetsExclude.some(pattern => pattern.test(url.pathname))) {
-        return;
-    }
-
-    // Handle requests with cache-first strategy
-    if (offlineAssetsInclude.some(pattern => pattern.test(url.pathname))) {
-        event.respondWith(
-            cacheFirst(event.request)
-        );
-    }
-});
-
-// Cache-first strategy with network fallback
-async function cacheFirst(request) {
-    try {
-        // Try cache first
-        const cachedResponse = await caches.match(request);
-        if (cachedResponse) {
-            console.log('Cache hit for:', request.url);
-            return cachedResponse;
+        // Cache critical assets first
+        try {
+            await cache.addAll(CRITICAL_ASSETS);
+            console.log('SW: Critical assets cached');
+        } catch (error) {
+            console.error('SW: Failed to cache critical assets:', error);
         }
 
-        // Fallback to network
-        console.log('Cache miss, fetching from network:', request.url);
-        const networkResponse = await fetch(request);
+        // Cache additional assets from manifest if available
+        if (self.assetsManifest?.assets) {
+            const additionalAssets = self.assetsManifest.assets
+                .map(asset => asset.url.startsWith('/') ? asset.url : `${BASE_PATH}${asset.url}`)
+                .filter(url => !CRITICAL_ASSETS.includes(url));
 
-        // Cache successful responses
-        if (networkResponse.ok) {
-            const cache = await caches.open(CACHE_NAME);
-            cache.put(request, networkResponse.clone());
-        }
-
-        return networkResponse;
-    } catch (error) {
-        console.error('Fetch failed:', error);
-
-        // Return offline fallback if available
-        if (request.destination === 'document') {
-            const offlineResponse = await caches.match('/offline.html');
-            if (offlineResponse) {
-                return offlineResponse;
+            try {
+                await cache.addAll(additionalAssets);
+                console.log('SW: Additional assets cached');
+            } catch (error) {
+                console.warn('SW: Some additional assets failed to cache:', error);
             }
         }
 
-        return new Response('Network error occurred', {
-            status: 408,
-            headers: { 'Content-Type': 'text/plain' },
+        self.skipWaiting();
+    })());
+});
+
+self.addEventListener('activate', event => {
+    console.log('SW: Activating');
+
+    event.waitUntil((async () => {
+        // Clean old caches
+        const cacheNames = await caches.keys();
+        await Promise.all(
+            cacheNames
+                .filter(name => name !== CACHE_NAME)
+                .map(name => caches.delete(name))
+        );
+
+        self.clients.claim();
+    })());
+});
+
+self.addEventListener('fetch', event => {
+    const url = new URL(event.request.url);
+
+    // Only handle same-origin requests under our base path
+    if (url.origin !== location.origin || !url.pathname.startsWith(BASE_PATH)) {
+        return;
+    }
+
+    // Skip service worker and hot reload requests
+    if (url.pathname.includes('service-worker') ||
+        url.pathname.includes('_blazor') ||
+        url.searchParams.has('hot-reload')) {
+        return;
+    }
+
+    event.respondWith(handleFetch(event.request));
+});
+
+async function handleFetch(request) {
+    try {
+        // Try cache first for all requests
+        const cachedResponse = await caches.match(request);
+        if (cachedResponse) {
+            console.log('SW: Cache hit:', request.url);
+            return cachedResponse;
+        }
+
+        // Try network
+        const networkResponse = await fetch(request);
+
+        // Cache successful responses
+        if (networkResponse.ok && networkResponse.status === 200) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(request, networkResponse.clone());
+            console.log('SW: Cached from network:', request.url);
+        }
+
+        return networkResponse;
+
+    } catch (error) {
+        console.error('SW: Fetch failed:', request.url, error);
+
+        // Fallback for navigation requests
+        if (request.destination === 'document') {
+            const fallback = await caches.match(`${BASE_PATH}index.html`);
+            return fallback || new Response('Offline', { status: 503 });
+        }
+
+        return new Response('Network Error', {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain' }
         });
     }
 }
-
-// Handle background sync (if needed)
-self.addEventListener('sync', event => {
-    if (event.tag === 'background-sync') {
-        event.waitUntil(doBackgroundSync());
-    }
-});
-
-async function doBackgroundSync() {
-    console.log('Background sync triggered');
-    // Implement your background sync logic here
-}
-
-// Handle push notifications (if needed)
-self.addEventListener('push', event => {
-    if (event.data) {
-        const data = event.data.json();
-        event.waitUntil(
-            self.registration.showNotification(data.title, {
-                body: data.body,
-                icon: '/icon-192.png',
-                badge: '/icon-192.png'
-            })
-        );
-    }
-});
-
-// Handle notification clicks
-self.addEventListener('notificationclick', event => {
-    event.notification.close();
-    event.waitUntil(
-        clients.openWindow(BASE_URL)
-    );
-});
-
-// Debug logging
-console.log('Service Worker loaded with config:', {
-    VERSION,
-    CACHE_NAME,
-    BASE_URL,
-    assetsCount: assetsManifest.assets?.length || 0
-});
