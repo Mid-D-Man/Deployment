@@ -13,74 +13,166 @@
     <link href="manifest.json" rel="manifest" />
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+
+    <!-- PWA meta tags -->
+    <meta name="theme-color" content="#03173d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Deployment" />
 </head>
 
 <body>
-    <div id="app">
-        <svg class="loading-progress">
-            <circle r="40%" cx="50%" cy="50%" />
-            <circle r="40%" cx="50%" cy="50%" />
-        </svg>
-        <div class="loading-progress-text"></div>
+<div id="app">
+    <svg class="loading-progress">
+        <circle r="40%" cx="50%" cy="50%" />
+        <circle r="40%" cx="50%" cy="50%" />
+    </svg>
+    <div class="loading-progress-text"></div>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+<!-- PWA Install Button -->
+<div id="pwa-install-banner" style="display: none; position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 1000; background: #03173d; color: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+            <div style="font-weight: bold; margin-bottom: 5px;">Install Deployment</div>
+            <div style="font-size: 14px; opacity: 0.9;">Add to your home screen for a better experience</div>
+        </div>
+        <div>
+            <button id="pwa-install-btn" style="background: white; color: #03173d; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; margin-right: 10px; cursor: pointer;">Install</button>
+            <button id="pwa-dismiss-btn" style="background: transparent; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 4px; cursor: pointer;">Later</button>
+        </div>
     </div>
+</div>
 
-    <div id="blazor-error-ui">
-        An unhandled error has occurred.
-        <a href="" class="reload">Reload</a>
-        <a class="dismiss">🗙</a>
-    </div>
-    <script src="_framework/blazor.webassembly.js"></script>
-    <script>navigator.serviceWorker.register('service-worker.js');</script>
+<script src="_framework/blazor.webassembly.js"></script>
 
-    <!-- Load WASM files if they exist -->
-    <script type="module" src="./wasm/qr_code_generator.js" onerror="console.warn('WASM QR generator not found')"></script>
-    <!-- Load modules -->
-    <script type="module" src="./js/qrCodeModule.js"></script>
-    <script src="./js/cryptographyHandler.js"></script>
-
-    <script>
-        // Camera utility functions for QR scanner
-        window.getCameraStream = async (constraints) => {
-            try {
-                return await navigator.mediaDevices.getUserMedia(constraints);
-            } catch (error) {
-                console.error('Camera access error:', error);
-                throw error;
-            }
-        };
-
-        window.stopMediaStream = (stream) => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-        };
-
-        // Check camera permissions
-        window.checkCameraPermission = async () => {
-            try {
-                const result = await navigator.permissions.query({ name: 'camera' });
-                return result.state;
-            } catch (error) {
-                return 'unknown';
-            }
-        };
-    </script>
-    <script>
-        // Add this to debug WASM loading
-        window.addEventListener('load', async () => {
-            try {
-                const wasmUrl = './wasm/qr_code_generator_bg.wasm';
-                const response = await fetch(wasmUrl);
-                console.log('WASM fetch response:', {
-                    status: response.status,
-                    contentType: response.headers.get('content-type'),
-                    url: response.url
+<!-- PWA Service Worker Registration -->
+<script>
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker registration successful:', registration.scope);
+                })
+                .catch(function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
                 });
-            } catch (error) {
-                console.error('WASM fetch failed:', error);
+        });
+    }
+
+    // PWA Install Banner
+    let deferredPrompt;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        console.log('beforeinstallprompt fired');
+        e.preventDefault();
+        deferredPrompt = e;
+
+        // Show install banner
+        const banner = document.getElementById('pwa-install-banner');
+        banner.style.display = 'block';
+    });
+
+    // Install button click
+    document.addEventListener('DOMContentLoaded', function() {
+        const installBtn = document.getElementById('pwa-install-btn');
+        const dismissBtn = document.getElementById('pwa-dismiss-btn');
+        const banner = document.getElementById('pwa-install-banner');
+
+        installBtn?.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log('User choice:', outcome);
+                deferredPrompt = null;
+                banner.style.display = 'none';
             }
         });
-    </script>
+
+        dismissBtn?.addEventListener('click', () => {
+            banner.style.display = 'none';
+        });
+    });
+
+    // Handle app installation
+    window.addEventListener('appinstalled', (evt) => {
+        console.log('App was installed.');
+        document.getElementById('pwa-install-banner').style.display = 'none';
+    });
+
+    // Debug PWA installability
+    window.addEventListener('load', () => {
+        console.log('Checking PWA installability...');
+        console.log('Service Worker supported:', 'serviceWorker' in navigator);
+        console.log('Manifest link exists:', !!document.querySelector('link[rel="manifest"]'));
+        console.log('Is HTTPS or localhost:', location.protocol === 'https:' || location.hostname === 'localhost');
+
+        // Check manifest
+        fetch('./manifest.json')
+            .then(r => r.json())
+            .then(manifest => {
+                console.log('Manifest loaded:', manifest);
+                console.log('Has required fields:', !!(manifest.name && manifest.icons && manifest.start_url && manifest.display));
+            })
+            .catch(e => console.error('Manifest load failed:', e));
+    });
+</script>
+
+<!-- Camera utility functions for QR scanner -->
+<script>
+    window.getCameraStream = async (constraints) => {
+        try {
+            return await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (error) {
+            console.error('Camera access error:', error);
+            throw error;
+        }
+    };
+
+    window.stopMediaStream = (stream) => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+    };
+
+    window.checkCameraPermission = async () => {
+        try {
+            const result = await navigator.permissions.query({ name: 'camera' });
+            return result.state;
+        } catch (error) {
+            return 'unknown';
+        }
+    };
+</script>
+
+<!-- Load WASM files if they exist -->
+<script type="module" src="./wasm/qr_code_generator.js" onerror="console.warn('WASM QR generator not found')"></script>
+<script type="module" src="./js/qrCodeModule.js"></script>
+<script src="./js/cryptographyHandler.js"></script>
+
+<script>
+    // WASM loading debug
+    window.addEventListener('load', async () => {
+        try {
+            const wasmUrl = './wasm/qr_code_generator_bg.wasm';
+            const response = await fetch(wasmUrl);
+            console.log('WASM fetch response:', {
+                status: response.status,
+                contentType: response.headers.get('content-type'),
+                url: response.url
+            });
+        } catch (error) {
+            console.error('WASM fetch failed:', error);
+        }
+    });
+</script>
 </body>
 
 </html>

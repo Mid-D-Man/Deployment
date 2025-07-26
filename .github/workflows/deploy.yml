@@ -90,8 +90,9 @@ jobs:
           
           # 3. Update manifest.json for correct paths
           if [ -f "./pages/manifest.json" ]; then
-            sed -i 's|"start_url": "./"|\&"start_url": "./${{ github.event.repository.name }}/"|g' ./pages/manifest.json
-            echo "✅ Manifest start_url updated"
+            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
+            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
+            echo "✅ Manifest start_url and scope updated"
           fi
           
           # 4. Fix WASM MIME types

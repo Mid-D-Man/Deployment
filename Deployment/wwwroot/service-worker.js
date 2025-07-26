@@ -10,7 +10,7 @@ self.importScripts('./service-worker-assets.js');
 
 // Configure offline assets
 const offlineAssetsInclude = [/^\/Deployment\//];
-const offlineAssetsExclude = [/\/service-worker\.js$/];
+const offlineAssetsExclude = [/\/Deployment\/service-worker\.js$/];
 
 // Assets to precache
 const assetsManifest = self.assetsManifest || {
@@ -32,9 +32,12 @@ self.addEventListener('install', event => {
 
                 // Get the assets to precache from the manifest
                 const urlsToCache = assetsManifest.assets
-                    .filter(asset => offlineAssetsInclude.some(pattern => pattern.test(asset.url)))
-                    .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)))
-                    .map(asset => new URL(asset.url, self.location).href);
+                    .filter(asset => asset.url.startsWith('/Deployment/') || asset.url === '/')
+                    .map(asset => {
+                        let url = asset.url;
+                        if (url === '/') url = '/Deployment/';
+                        return new URL(url, self.location).href;
+                    });
 
                 console.log('Caching assets:', urlsToCache);
                 return cache.addAll(urlsToCache);

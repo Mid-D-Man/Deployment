@@ -1,13 +1,13 @@
 {
   "name": "Deployment",
   "short_name": "Deployment",
-  "start_url": "./",
+  "start_url": "/Deployment/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#03173d",
   "prefer_related_applications": false,
   "orientation": "any",
-  "scope": "./",
+  "scope": "/Deployment/",
   "icons": [
     {
       "src": "icon-512.png",
