@@ -74,6 +74,21 @@
     const installBtn = document.getElementById('pwa-install-btn');
     const dismissBtn = document.getElementById('pwa-dismiss-btn');
 
+    // Show banner if PWA not installed and not dismissed
+    function checkPWAInstallability() {
+        if (window.matchMedia('(display-mode: standalone)').matches ||
+            window.navigator.standalone === true) {
+            // Already installed
+            return;
+        }
+
+        if (!localStorage.getItem('pwa-install-dismissed')) {
+            setTimeout(() => {
+                installBanner.style.display = 'block';
+            }, 3000); // Show after 3 seconds if no prompt
+        }
+    }
+
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferredPrompt = e;
@@ -83,6 +98,9 @@
             installBanner.style.display = 'block';
         }
     });
+
+    // Fallback for browsers that don't fire beforeinstallprompt
+    window.addEventListener('load', checkPWAInstallability);
 
     installBtn.addEventListener('click', async () => {
         if (deferredPrompt) {

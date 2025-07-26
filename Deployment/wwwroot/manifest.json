@@ -1,13 +1,13 @@
 {
   "name": "Deployment",
   "short_name": "Deployment",
-  "start_url": "/Deployment/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#03173d",
   "prefer_related_applications": false,
   "orientation": "any",
-  "scope": "/Deployment/",
+  "scope": "./",
   "icons": [
     {
       "src": "icon-512.png",
@@ -20,14 +20,6 @@
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "form_factor": "wide"
     }
   ],
   "categories": ["utilities", "productivity"],
