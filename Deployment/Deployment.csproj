@@ -22,9 +22,7 @@
         <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js"/>
 
         <!-- Ensure PWA assets are included -->
-        <Content Include="wwwroot\manifest.json" />
-        <Content Include="wwwroot\icon-192.png" />
-        <Content Include="wwwroot\icon-512.png" />
+      
         <Content Include="wwwroot\offline.html" Condition="Exists('wwwroot\offline.html')" />
     </ItemGroup>
 
