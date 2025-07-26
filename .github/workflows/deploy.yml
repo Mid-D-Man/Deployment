@@ -29,36 +29,37 @@ jobs:
       - name: Publish PWA
         run: dotnet publish Deployment/Deployment.csproj -c Release -o dist
 
-      - name: Prepare GitHub Pages
+      - name: Fix GitHub Pages Paths
         run: |
           mkdir -p pages
           cp -r dist/wwwroot/* pages/
           
-          # Essential GitHub Pages fixes
-          touch pages/.nojekyll
-          cp pages/index.html pages/404.html
+          # Critical: Fix base href
+          sed -i 's|<base href="/" />|<base href="/Deployment/" />|g' pages/index.html
           
-          # Fix base href for subpath
-          sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' pages/index.html pages/404.html
+          # Fix manifest reference
+          sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' pages/index.html
           
-          # Rename manifest for GitHub Pages compatibility
+          # Rename and fix manifest
           if [ -f "pages/manifest.json" ]; then
             mv pages/manifest.json pages/manifest.webmanifest
-            sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' pages/index.html pages/404.html
-          fi
-          
-          # Update manifest paths
-          if [ -f "pages/manifest.webmanifest" ]; then
-            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' pages/manifest.webmanifest
-            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' pages/manifest.webmanifest
+            # Fix manifest paths to match GitHub Pages
+            sed -i 's|"start_url": "/Deployment/"|"start_url": "/Deployment/"|g' pages/manifest.webmanifest
+            sed -i 's|"scope": "/Deployment/"|"scope": "/Deployment/"|g' pages/manifest.webmanifest
           fi
           
           # Use published service worker
           if [ -f "pages/service-worker.published.js" ]; then
-            mv pages/service-worker.published.js pages/service-worker.js
+            cp pages/service-worker.published.js pages/service-worker.js
           fi
           
-          # Critical: Create WASM MIME type headers
+          # Create 404.html for SPA routing
+          cp pages/index.html pages/404.html
+          
+          # Disable Jekyll
+          touch pages/.nojekyll
+          
+          # Fix WASM MIME types
           cat > pages/_headers << 'EOF'
           /*.wasm
             Content-Type: application/wasm
@@ -66,24 +67,14 @@ jobs:
             Content-Type: application/octet-stream
           /*.webmanifest
             Content-Type: application/manifest+json
+          /*.js
+            Content-Type: application/javascript
           EOF
 
-      - name: Upload Pages
+      - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./pages
 
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-  deploy:
-    needs: build-and-deploy
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy
-        id: deployment
         uses: actions/deploy-pages@v4

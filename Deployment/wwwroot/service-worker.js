@@ -1,8 +1,8 @@
-// Blazor WASM PWA Service Worker - Optimized for Offline
-const CACHE_NAME = 'blazor-pwa-v2';
-const BASE_PATH = '/Deployment/';
+// Fixed Blazor WASM PWA Service Worker for GitHub Pages
+const CACHE_NAME = 'blazor-pwa-v3';
+const BASE_PATH = '/Deployment/'; // Must match GitHub Pages path
 
-// Critical Blazor assets that MUST be cached for offline boot
+// Critical assets with correct GitHub Pages paths
 const CRITICAL_ASSETS = [
     `${BASE_PATH}`,
     `${BASE_PATH}index.html`,
@@ -10,41 +10,49 @@ const CRITICAL_ASSETS = [
     `${BASE_PATH}_framework/blazor.webassembly.js`,
     `${BASE_PATH}_framework/blazor.boot.json`,
     `${BASE_PATH}_framework/dotnet.wasm`,
-    `${BASE_PATH}_framework/dotnet.js`
+    `${BASE_PATH}_framework/dotnet.js`,
+    `${BASE_PATH}offline.html`
 ];
 
-// Import service worker assets if available
+// Import Blazor assets manifest
 try {
     self.importScripts('./service-worker-assets.js');
+    console.log('SW: Assets manifest loaded');
 } catch (e) {
-    console.warn('Service worker assets not found, using fallback');
+    console.warn('SW: Assets manifest not found, using fallback');
 }
 
 self.addEventListener('install', event => {
-    console.log('SW: Installing');
+    console.log('SW: Installing v3');
 
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE_NAME);
 
-        // Cache critical assets first
-        try {
-            await cache.addAll(CRITICAL_ASSETS);
-            console.log('SW: Critical assets cached');
-        } catch (error) {
-            console.error('SW: Failed to cache critical assets:', error);
+        // Cache critical assets with error handling
+        for (const asset of CRITICAL_ASSETS) {
+            try {
+                await cache.add(asset);
+                console.log(`SW: Cached ${asset}`);
+            } catch (error) {
+                console.error(`SW: Failed to cache ${asset}:`, error);
+            }
         }
 
-        // Cache additional assets from manifest if available
+        // Cache additional Blazor framework assets
         if (self.assetsManifest?.assets) {
             const additionalAssets = self.assetsManifest.assets
-                .map(asset => asset.url.startsWith('/') ? asset.url : `${BASE_PATH}${asset.url}`)
+                .map(asset => {
+                    const url = asset.url.startsWith('/') ? asset.url : `/${asset.url}`;
+                    return url.startsWith(BASE_PATH) ? url : `${BASE_PATH.slice(1)}${url}`;
+                })
                 .filter(url => !CRITICAL_ASSETS.includes(url));
 
-            try {
-                await cache.addAll(additionalAssets);
-                console.log('SW: Additional assets cached');
-            } catch (error) {
-                console.warn('SW: Some additional assets failed to cache:', error);
+            for (const asset of additionalAssets.slice(0, 50)) { // Limit to prevent timeout
+                try {
+                    await cache.add(asset);
+                } catch (error) {
+                    console.warn(`SW: Failed to cache additional asset ${asset}`);
+                }
             }
         }
 
@@ -53,7 +61,7 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-    console.log('SW: Activating');
+    console.log('SW: Activating v3');
 
     event.waitUntil((async () => {
         // Clean old caches
@@ -61,7 +69,10 @@ self.addEventListener('activate', event => {
         await Promise.all(
             cacheNames
                 .filter(name => name !== CACHE_NAME)
-                .map(name => caches.delete(name))
+                .map(name => {
+                    console.log(`SW: Deleting old cache ${name}`);
+                    return caches.delete(name);
+                })
         );
 
         self.clients.claim();
@@ -72,7 +83,7 @@ self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
     // Only handle same-origin requests under our base path
-    if (url.origin !== location.origin || !url.pathname.startsWith(BASE_PATH)) {
+    if (url.origin !== location.origin) {
         return;
     }
 
@@ -83,20 +94,35 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    event.respondWith(handleFetch(event.request));
+    event.respondWith(handleFetch(event.request, url));
 });
 
-async function handleFetch(request) {
+async function handleFetch(request, url) {
     try {
-        // Try cache first for all requests
+        // For root path, redirect to base path
+        if (url.pathname === '/' || url.pathname === '/Deployment') {
+            const cachedIndex = await caches.match(`${BASE_PATH}index.html`);
+            if (cachedIndex) {
+                return cachedIndex;
+            }
+        }
+
+        // Try cache first
         const cachedResponse = await caches.match(request);
         if (cachedResponse) {
             console.log('SW: Cache hit:', request.url);
             return cachedResponse;
         }
 
-        // Try network
-        const networkResponse = await fetch(request);
+        // Try network with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        const networkResponse = await fetch(request, {
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
 
         // Cache successful responses
         if (networkResponse.ok && networkResponse.status === 200) {
@@ -112,11 +138,23 @@ async function handleFetch(request) {
 
         // Fallback for navigation requests
         if (request.destination === 'document') {
-            const fallback = await caches.match(`${BASE_PATH}index.html`);
-            return fallback || new Response('Offline', { status: 503 });
+            const fallback = await caches.match(`${BASE_PATH}offline.html`) ||
+                await caches.match(`${BASE_PATH}index.html`);
+
+            if (fallback) {
+                return fallback;
+            }
         }
 
-        return new Response('Network Error', {
+        // Fallback for Blazor framework files
+        if (url.pathname.includes('_framework/')) {
+            const cachedFallback = await caches.match(request);
+            if (cachedFallback) {
+                return cachedFallback;
+            }
+        }
+
+        return new Response('Offline - Resource not available', {
             status: 503,
             headers: { 'Content-Type': 'text/plain' }
         });
