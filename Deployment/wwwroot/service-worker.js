@@ -36,6 +36,8 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
     console.log('[SW] Activating service worker');
+    // Add to service worker temporarily
+    console.log('Assets manifest:', self.assetsManifest.assets.slice(0, 5));
     event.waitUntil((async () => {
         // Clean old caches
         const cacheNames = await caches.keys();
@@ -79,7 +81,7 @@ self.addEventListener('fetch', event => {
             // Cache successful responses
             if (networkResponse.ok) {
                 const cache = await caches.open(CACHE_NAME);
-                cache.put(request, networkResponse.clone());
+             await   cache.put(request, networkResponse.clone());
                 console.log(`[SW] Cached new resource: ${request.url}`);
             }
 
