@@ -1,5 +1,5 @@
 // Blazor WASM PWA Service Worker - Optimized for Offline
-const CACHE_NAME = 'blazor-pwa-v1';
+const CACHE_NAME = 'blazor-pwa-v2';
 const BASE_PATH = '/Deployment/';
 
 // Critical Blazor assets that MUST be cached for offline boot
