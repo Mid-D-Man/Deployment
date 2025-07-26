@@ -45,7 +45,7 @@ jobs:
             find . -name "*.csproj" -exec grep -l "Microsoft.AspNetCore.Components.WebAssembly" {} \; | head -1 | xargs -I {} dotnet publish {} --configuration Release --no-build --output ./dist
           fi
 
-      - name: Prepare for GitHub Pages
+      - name: Prepare for GitHub Pages with PWA Support
         run: |
           mkdir -p ./pages
           
@@ -62,50 +62,88 @@ jobs:
           # Create 404.html for SPA routing
           cp ./pages/index.html ./pages/404.html
           
-          # Update base href for GitHub Pages subpath
+          # Update base href for GitHub Pages subpath in both files
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
           
-          # Fix MIME type issues - Add _headers file for Netlify-style hosting
+          # Update manifest.json scope for GitHub Pages subpath
+          if [ -f "./pages/manifest.json" ]; then
+            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
+            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
+          fi
+          
+          # Update manifest.webmanifest if it exists
+          if [ -f "./pages/manifest.webmanifest" ]; then
+            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
+            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
+          fi
+          
+          # Fix MIME type issues - Add _headers file
           cat > ./pages/_headers << 'EOF'
           /*.wasm
             Content-Type: application/wasm
           /*.js
             Content-Type: application/javascript
+          /*.webmanifest
+            Content-Type: application/manifest+json
           EOF
           
           # Create .htaccess for Apache servers
           cat > ./pages/.htaccess << 'EOF'
           AddType application/wasm .wasm
           AddType application/javascript .js
+          AddType application/manifest+json .webmanifest
           
           # SPA routing fallback
           RewriteEngine On
           RewriteCond %{REQUEST_FILENAME} !-f
           RewriteCond %{REQUEST_FILENAME} !-d
           RewriteRule . /index.html [L]
+          
+          # PWA caching headers
+          <IfModule mod_expires.c>
+            ExpiresActive on
+            ExpiresByType application/wasm "access plus 1 year"
+            ExpiresByType application/javascript "access plus 1 month"
+            ExpiresByType text/css "access plus 1 month"
+            ExpiresByType image/png "access plus 1 year"
+            ExpiresByType image/jpg "access plus 1 year"
+            ExpiresByType application/manifest+json "access plus 1 week"
+          </IfModule>
           EOF
           
-          # Verify WASM files exist and set proper permissions
-          echo "=== Verifying WASM files ==="
-          find ./pages -name "*.wasm" -type f -exec echo "Found WASM file: {}" \; -exec file {} \;
+          # Verify critical PWA files
+          echo "=== Verifying PWA deployment ==="
           
-          # List all files in wasm directory for debugging
-          if [ -d "./pages/wasm" ]; then
-            echo "Contents of wasm directory:"
-            ls -la ./pages/wasm/
+          # Check service worker
+          if [ -f "./pages/service-worker.js" ]; then
+            echo "✅ Service worker found"
           else
-            echo "No wasm directory found"
+            echo "❌ Service worker missing"
           fi
-          # im no longer using zxing 
-          # Verify ZXing files are properly copied
-          echo "=== Verifying ZXing deployment ==="
-          if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
-            echo "✅ ZXing JS file found"
-            file ./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js
+          
+          # Check manifest
+          if [ -f "./pages/manifest.webmanifest" ] || [ -f "./pages/manifest.json" ]; then
+            echo "✅ Manifest found"
           else
-            echo "❌ ZXing JS file missing"
-            find ./pages -name "*.js" | grep -i zxing || echo "No ZXing JS files found"
+            echo "❌ Manifest missing"
+          fi
+          
+          # Check WASM files
+          find ./pages -name "*.wasm" -type f -exec echo "Found WASM: {}" \;
+          
+          # Check service worker assets
+          if [ -f "./pages/service-worker-assets.js" ]; then
+            echo "✅ Service worker assets manifest found"
+          else
+            echo "❌ Service worker assets manifest missing"
+          fi
+          
+          # Verify icons
+          if [ -f "./pages/icon-192.png" ] && [ -f "./pages/icon-512.png" ]; then
+            echo "✅ PWA icons found"
+          else
+            echo "❌ PWA icons missing"
           fi
 
       - name: Upload Pages artifact

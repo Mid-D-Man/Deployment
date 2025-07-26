@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Deployment</title>
-    <base href="/" />
+    <base href="/Deployment/" />
     <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
     <link href="css/app.css" rel="stylesheet" />
     <link rel="icon" type="image/png" href="favicon.png" />
@@ -17,6 +17,7 @@
     <!-- PWA meta tags -->
     <meta name="theme-color" content="#03173d" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Deployment" />
 </head>
@@ -50,126 +51,106 @@
     </div>
 </div>
 
+<!-- PWA Update Banner -->
+<div id="pwa-update-banner" style="display: none; position: fixed; top: 20px; left: 20px; right: 20px; z-index: 1001; background: #17a2b8; color: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+            <div style="font-weight: bold; margin-bottom: 5px;">New Version Available</div>
+            <div style="font-size: 14px; opacity: 0.9;">A new version of the app is ready to install</div>
+        </div>
+        <div>
+            <button id="pwa-update-btn" style="background: white; color: #17a2b8; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; margin-right: 10px; cursor: pointer;">Update</button>
+            <button id="pwa-update-dismiss-btn" style="background: transparent; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 16px; border-radius: 4px; cursor: pointer;">Later</button>
+        </div>
+    </div>
+</div>
+
 <script src="_framework/blazor.webassembly.js"></script>
 
-<!-- PWA Service Worker Registration -->
 <script>
-    // Register service worker
+    // PWA Install functionality
+    let deferredPrompt;
+    const installBanner = document.getElementById('pwa-install-banner');
+    const installBtn = document.getElementById('pwa-install-btn');
+    const dismissBtn = document.getElementById('pwa-dismiss-btn');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+
+        // Check if user has already dismissed the banner
+        if (!localStorage.getItem('pwa-install-dismissed')) {
+            installBanner.style.display = 'block';
+        }
+    });
+
+    installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User response to the install prompt: ${outcome}`);
+            deferredPrompt = null;
+            installBanner.style.display = 'none';
+        }
+    });
+
+    dismissBtn.addEventListener('click', () => {
+        installBanner.style.display = 'none';
+        localStorage.setItem('pwa-install-dismissed', 'true');
+    });
+
+    // Service Worker Update handling
+    const updateBanner = document.getElementById('pwa-update-banner');
+    const updateBtn = document.getElementById('pwa-update-btn');
+    const updateDismissBtn = document.getElementById('pwa-update-dismiss-btn');
+
+    let waitingServiceWorker = null;
+
     if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-            navigator.serviceWorker.register('service-worker.js')
-                .then(function(registration) {
-                    console.log('[PWA] ServiceWorker registration successful:', registration.scope);
-                })
-                .catch(function(err) {
-                    console.log('[PWA] ServiceWorker registration failed:', err);
+        navigator.serviceWorker.register('./service-worker.js', { scope: './' })
+            .then(registration => {
+                console.log('SW registered: ', registration);
+
+                registration.addEventListener('updatefound', () => {
+                    const newWorker = registration.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            // New version is available
+                            waitingServiceWorker = newWorker;
+                            updateBanner.style.display = 'block';
+                        }
+                    });
                 });
+            })
+            .catch(registrationError => {
+                console.log('SW registration failed: ', registrationError);
+            });
+
+        // Listen for the service worker's message that a new version is ready
+        navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data && event.data.type === 'NEW_VERSION_AVAILABLE') {
+                updateBanner.style.display = 'block';
+            }
         });
     }
 
-    // PWA Install Banner
-    let deferredPrompt;
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-        console.log('[PWA] beforeinstallprompt fired');
-        e.preventDefault();
-        deferredPrompt = e;
-        document.getElementById('pwa-install-banner').style.display = 'block';
+    updateBtn.addEventListener('click', () => {
+        if (waitingServiceWorker) {
+            waitingServiceWorker.postMessage({ type: 'SKIP_WAITING' });
+            waitingServiceWorker = null;
+        }
+        window.location.reload();
     });
 
-    // Install button click
-    document.addEventListener('DOMContentLoaded', function() {
-        const installBtn = document.getElementById('pwa-install-btn');
-        const dismissBtn = document.getElementById('pwa-dismiss-btn');
-        const banner = document.getElementById('pwa-install-banner');
-
-        installBtn?.addEventListener('click', async () => {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                console.log('[PWA] User choice:', outcome);
-                deferredPrompt = null;
-                banner.style.display = 'none';
-            }
-        });
-
-        dismissBtn?.addEventListener('click', () => {
-            banner.style.display = 'none';
-        });
+    updateDismissBtn.addEventListener('click', () => {
+        updateBanner.style.display = 'none';
     });
 
-    // Handle app installation
-    window.addEventListener('appinstalled', (evt) => {
-        console.log('[PWA] App was installed.');
-        document.getElementById('pwa-install-banner').style.display = 'none';
-    });
-
-    // Debug PWA installability
-    window.addEventListener('load', () => {
-        console.log('[PWA] Checking installability...');
-        console.log('- Service Worker supported:', 'serviceWorker' in navigator);
-        console.log('- Manifest link exists:', !!document.querySelector('link[rel="manifest"]'));
-        console.log('- Is HTTPS or localhost:', location.protocol === 'https:' || location.hostname === 'localhost');
-
-        // Check manifest
-        fetch('./manifest.webmanifest')
-            .then(r => r.json())
-            .then(manifest => {
-                console.log('[PWA] Manifest loaded:', manifest);
-                console.log('- Has required fields:', !!(manifest.name && manifest.icons && manifest.start_url && manifest.display));
-            })
-            .catch(e => console.error('[PWA] Manifest load failed:', e));
+    // Listen for the controlling service worker changing and reload the page
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
     });
 </script>
-<!--
- Camera utility functions for QR scanner 
-<script>
-    window.getCameraStream = async (constraints) => {
-        try {
-            return await navigator.mediaDevices.getUserMedia(constraints);
-        } catch (error) {
-            console.error('Camera access error:', error);
-            throw error;
-        }
-    };
 
-    window.stopMediaStream = (stream) => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-    };
-
-    window.checkCameraPermission = async () => {
-        try {
-            const result = await navigator.permissions.query({ name: 'camera' });
-            return result.state;
-        } catch (error) {
-            return 'unknown';
-        }
-    };
-</script>
-
- Load WASM files if they exist 
-<script type="module" src="./wasm/qr_code_generator.js" onerror="console.warn('WASM QR generator not found')"></script>
-<script type="module" src="./js/qrCodeModule.js"></script>
-<script src="./js/cryptographyHandler.js"></script>
-
-<script>
-    // WASM loading debug
-    window.addEventListener('load', async () => {
-        try {
-            const wasmUrl = './wasm/qr_code_generator_bg.wasm';
-            const response = await fetch(wasmUrl);
-            console.log('[WASM] Fetch response:', {
-                status: response.status,
-                contentType: response.headers.get('content-type'),
-                url: response.url
-            });
-        } catch (error) {
-            console.error('[WASM] Fetch failed:', error);
-        }
-    });
-</script> -->
 </body>
-
 </html>
