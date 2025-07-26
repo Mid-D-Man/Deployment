@@ -68,14 +68,8 @@ jobs:
           
           # Update manifest.json scope for GitHub Pages subpath
           if [ -f "./pages/manifest.json" ]; then
-            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
-            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
-          fi
-          
-          # Update manifest.webmanifest if it exists
-          if [ -f "./pages/manifest.webmanifest" ]; then
-            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
-            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
+            sed -i 's|"start_url": "./"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
+            sed -i 's|"scope": "./"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
           fi
           
           # Fix MIME type issues - Add _headers file
