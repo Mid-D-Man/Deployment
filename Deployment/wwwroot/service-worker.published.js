@@ -1,6 +1,4 @@
-// Caution! Be sure you understand the caveats before publishing an application with
-// offline support. See https://aka.ms/blazor-offline-considerations
-
+// Critical fix for GitHub Pages deployment
 self.importScripts('./service-worker-assets.js');
 self.addEventListener('install', event => event.waitUntil(onInstall(event)));
 self.addEventListener('activate', event => event.waitUntil(onActivate(event)));
@@ -12,28 +10,23 @@ const offlineAssetsInclude = [ /\.dll$/, /\.pdb$/, /\.wasm/, /\.html/, /\.js$/, 
 const offlineAssetsExclude = [ /^service-worker\.js$/ ];
 
 async function onInstall(event) {
-    console.info('Service worker: Install');
+    console.info('SW: Installing with assets:', self.assetsManifest.assets.length);
 
-    // GitHub Pages path adjustment
     const assetsRequests = self.assetsManifest.assets
         .filter(asset => offlineAssetsInclude.some(pattern => pattern.test(asset.url)))
         .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)))
-        .map(asset => {
-            // Ensure proper GitHub Pages path
-            let url = asset.url;
-            if (!url.startsWith('/Deployment/') && !url.startsWith('http')) {
-                url = url.startsWith('/') ? `/Deployment${url}` : `/Deployment/${url}`;
-            }
-            return new Request(url, { integrity: asset.hash, cache: 'no-cache' });
-        });
+        .map(asset => new Request(asset.url, { integrity: asset.hash, cache: 'no-cache' }));
 
-    await caches.open(cacheName).then(cache => cache.addAll(assetsRequests));
+    console.info('SW: Caching', assetsRequests.length, 'assets');
+    const cache = await caches.open(cacheName);
+    await cache.addAll(assetsRequests);
+
+    // Critical: Cache counter page
+    await cache.add('/Deployment/counter');
 }
 
 async function onActivate(event) {
-    console.info('Service worker: Activate');
-
-    // Delete unused caches
+    console.info('SW: Activate');
     const cacheKeys = await caches.keys();
     await Promise.all(cacheKeys
         .filter(key => key.startsWith(cacheNamePrefix) && key !== cacheName)
@@ -41,19 +34,36 @@ async function onActivate(event) {
 }
 
 async function onFetch(event) {
-    let cachedResponse = null;
-    if (event.request.method === 'GET') {
-        const shouldServeIndexHtml = event.request.mode === 'navigate';
-
-        let request = event.request;
-        if (shouldServeIndexHtml) {
-            // Serve index.html for navigation requests
-            request = new Request('/Deployment/index.html');
-        }
-
-        const cache = await caches.open(cacheName);
-        cachedResponse = await cache.match(request);
+    if (event.request.method !== 'GET') {
+        return fetch(event.request);
     }
 
-    return cachedResponse || fetch(event.request);
+    const cache = await caches.open(cacheName);
+    let cachedResponse = await cache.match(event.request);
+
+    if (cachedResponse) {
+        console.log('SW: Cache hit:', event.request.url);
+        return cachedResponse;
+    }
+
+    // Navigation fallback to index.html
+    if (event.request.mode === 'navigate') {
+        cachedResponse = await cache.match('/Deployment/index.html');
+        if (cachedResponse) {
+            console.log('SW: Navigation fallback');
+            return cachedResponse;
+        }
+    }
+
+    // Network with cache fallback
+    try {
+        const response = await fetch(event.request);
+        if (response.ok) {
+            cache.put(event.request, response.clone());
+        }
+        return response;
+    } catch (error) {
+        console.error('SW: Network failed:', event.request.url);
+        return new Response('Offline', { status: 503 });
+    }
 }
