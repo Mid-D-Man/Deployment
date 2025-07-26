@@ -66,46 +66,91 @@ jobs:
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/index.html
           sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|g' ./pages/404.html
           
-          # Fix MIME type issues - Add _headers file for Netlify-style hosting
+          # ===== CRITICAL PWA FIXES =====
+          
+          # 1. Use the PUBLISHED service worker (not the dev one)
+          if [ -f "./pages/service-worker.published.js" ]; then
+            echo "✅ Using published service worker"
+            mv ./pages/service-worker.published.js ./pages/service-worker.js
+          else
+            echo "❌ Published service worker not found"
+            ls -la ./pages/service-worker*
+          fi
+          
+          # 2. Fix service worker paths for GitHub Pages subpath
+          if [ -f "./pages/service-worker.js" ]; then
+            # Update service worker to use correct base path
+            sed -i "s|const offlineAssetsInclude = \[ \];|const offlineAssetsInclude = \[ /^\\/${{ github.event.repository.name }}\\// \];|g" ./pages/service-worker.js
+            sed -i "s|const offlineAssetsExclude = \[ \];|const offlineAssetsExclude = \[ /\\/${{ github.event.repository.name }}\\/service-worker\\.js$/ \];|g" ./pages/service-worker.js
+          
+            # Update cache name to include repo name
+            sed -i "s|'offline-cache-|'${{ github.event.repository.name }}-offline-cache-|g" ./pages/service-worker.js
+            echo "✅ Service worker paths updated for GitHub Pages"
+          fi
+          
+          # 3. Update manifest.json for correct paths
+          if [ -f "./pages/manifest.json" ]; then
+            sed -i 's|"start_url": "./"|\&"start_url": "./${{ github.event.repository.name }}/"|g' ./pages/manifest.json
+            echo "✅ Manifest start_url updated"
+          fi
+          
+          # 4. Fix WASM MIME types
           cat > ./pages/_headers << 'EOF'
           /*.wasm
             Content-Type: application/wasm
           /*.js
             Content-Type: application/javascript
+          /*.json
+            Content-Type: application/json
+          /*
+            X-Frame-Options: DENY
+            X-Content-Type-Options: nosniff
           EOF
           
-          # Create .htaccess for Apache servers
+          # 5. Apache .htaccess for WASM MIME types
           cat > ./pages/.htaccess << 'EOF'
           AddType application/wasm .wasm
           AddType application/javascript .js
+          AddType application/json .json
           
-          # SPA routing fallback
+          # SPA routing fallback  
           RewriteEngine On
           RewriteCond %{REQUEST_FILENAME} !-f
           RewriteCond %{REQUEST_FILENAME} !-d
           RewriteRule . /index.html [L]
+          
+          # Security headers
+          Header always set X-Frame-Options DENY
+          Header always set X-Content-Type-Options nosniff
           EOF
           
-          # Verify WASM files exist and set proper permissions
-          echo "=== Verifying WASM files ==="
-          find ./pages -name "*.wasm" -type f -exec echo "Found WASM file: {}" \; -exec file {} \;
-          
-          # List all files in wasm directory for debugging
-          if [ -d "./pages/wasm" ]; then
-            echo "Contents of wasm directory:"
-            ls -la ./pages/wasm/
+          # 6. Verify PWA files are properly deployed
+          echo "=== PWA Deployment Verification ==="
+          echo "Service Worker:"
+          if [ -f "./pages/service-worker.js" ]; then
+            echo "✅ Service worker deployed"
+            head -5 ./pages/service-worker.js
           else
-            echo "No wasm directory found"
+            echo "❌ Service worker missing"
           fi
-          # im no longer using zxing 
-          # Verify ZXing files are properly copied
-          echo "=== Verifying ZXing deployment ==="
-          if [ -f "./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js" ]; then
-            echo "✅ ZXing JS file found"
-            file ./pages/_content/ZXingBlazor/lib/zxing/zxing.min.js
+          
+          echo "Manifest:"
+          if [ -f "./pages/manifest.json" ]; then
+            echo "✅ Manifest deployed"
+            cat ./pages/manifest.json
+          else  
+            echo "❌ Manifest missing"
+          fi
+          
+          echo "WASM files:"
+          find ./pages -name "*.wasm" -type f -exec echo "Found: {}" \;
+          
+          echo "Service Worker Assets:"
+          if [ -f "./pages/service-worker-assets.js" ]; then
+            echo "✅ SW assets manifest found"
+            wc -l ./pages/service-worker-assets.js
           else
-            echo "❌ ZXing JS file missing"
-            find ./pages -name "*.js" | grep -i zxing || echo "No ZXing JS files found"
+            echo "❌ SW assets manifest missing"
           fi
 
       - name: Upload Pages artifact

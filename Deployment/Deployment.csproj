@@ -5,6 +5,8 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
+        <!-- Critical: Enable PWA features -->
+        <BlazorWebAssemblyLoadBootResource>true</BlazorWebAssemblyLoadBootResource>
     </PropertyGroup>
 
     <ItemGroup>
@@ -14,8 +16,21 @@
         <PackageReference Include="ReactorBlazorQRCodeScanner" Version="1.0.7" />
     </ItemGroup>
 
+    <!-- Critical PWA Configuration -->
     <ItemGroup>
+        <!-- Development service worker (disabled caching) -->
         <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js"/>
+
+        <!-- Ensure PWA assets are included -->
+        <Content Include="wwwroot\manifest.json" />
+        <Content Include="wwwroot\icon-192.png" />
+        <Content Include="wwwroot\icon-512.png" />
+        <Content Include="wwwroot\offline.html" Condition="Exists('wwwroot\offline.html')" />
     </ItemGroup>
+
+    <!-- Generate service worker assets manifest -->
+    <Target Name="GenerateServiceWorkerAssetsManifest" BeforeTargets="Build">
+        <Message Text="Generating service worker assets manifest..." Importance="high" />
+    </Target>
 
 </Project>
