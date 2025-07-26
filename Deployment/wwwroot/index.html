@@ -121,8 +121,8 @@
             .catch(e => console.error('[PWA] Manifest load failed:', e));
     });
 </script>
-
-<!-- Camera utility functions for QR scanner -->
+<!--
+ Camera utility functions for QR scanner 
 <script>
     window.getCameraStream = async (constraints) => {
         try {
@@ -149,7 +149,7 @@
     };
 </script>
 
-<!-- Load WASM files if they exist -->
+ Load WASM files if they exist 
 <script type="module" src="./wasm/qr_code_generator.js" onerror="console.warn('WASM QR generator not found')"></script>
 <script type="module" src="./js/qrCodeModule.js"></script>
 <script src="./js/cryptographyHandler.js"></script>
@@ -169,7 +169,7 @@
             console.error('[WASM] Fetch failed:', error);
         }
     });
-</script>
+</script> -->
 </body>
 
 </html>
