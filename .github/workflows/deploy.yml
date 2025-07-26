@@ -88,31 +88,42 @@ jobs:
             echo "✅ Service worker paths updated for GitHub Pages"
           fi
           
-          # 3. Update manifest.json for correct paths
+          # 3. CRITICAL: Rename manifest.json to manifest.webmanifest for GitHub Pages
           if [ -f "./pages/manifest.json" ]; then
-            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
-            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.json
+            mv ./pages/manifest.json ./pages/manifest.webmanifest
+            echo "✅ Renamed manifest.json to manifest.webmanifest"
+          
+            # Update index.html to reference .webmanifest
+            sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' ./pages/index.html
+            sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' ./pages/404.html
+            echo "✅ Updated manifest references in HTML"
+          fi
+          
+          # 4. Update manifest paths for GitHub Pages subpath
+          if [ -f "./pages/manifest.webmanifest" ]; then
+            sed -i 's|"start_url": "/Deployment/"|"start_url": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
+            sed -i 's|"scope": "/Deployment/"|"scope": "/${{ github.event.repository.name }}/"|g' ./pages/manifest.webmanifest
             echo "✅ Manifest start_url and scope updated"
           fi
           
-          # 4. Fix WASM MIME types
+          # 5. Fix WASM MIME types
           cat > ./pages/_headers << 'EOF'
           /*.wasm
             Content-Type: application/wasm
           /*.js
             Content-Type: application/javascript
-          /*.json
-            Content-Type: application/json
+          /*.webmanifest
+            Content-Type: application/manifest+json
           /*
             X-Frame-Options: DENY
             X-Content-Type-Options: nosniff
           EOF
           
-          # 5. Apache .htaccess for WASM MIME types
+          # 6. Apache .htaccess for WASM MIME types
           cat > ./pages/.htaccess << 'EOF'
           AddType application/wasm .wasm
           AddType application/javascript .js
-          AddType application/json .json
+          AddType application/manifest+json .webmanifest
           
           # SPA routing fallback  
           RewriteEngine On
@@ -125,7 +136,7 @@ jobs:
           Header always set X-Content-Type-Options nosniff
           EOF
           
-          # 6. Verify PWA files are properly deployed
+          # 7. Verify PWA files are properly deployed
           echo "=== PWA Deployment Verification ==="
           echo "Service Worker:"
           if [ -f "./pages/service-worker.js" ]; then
@@ -136,9 +147,9 @@ jobs:
           fi
           
           echo "Manifest:"
-          if [ -f "./pages/manifest.json" ]; then
+          if [ -f "./pages/manifest.webmanifest" ]; then
             echo "✅ Manifest deployed"
-            cat ./pages/manifest.json
+            cat ./pages/manifest.webmanifest
           else  
             echo "❌ Manifest missing"
           fi
