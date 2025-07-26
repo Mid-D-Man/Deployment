@@ -21,9 +21,6 @@
         <!-- Development service worker (disabled caching) -->
         <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js"/>
 
-        <!-- Ensure PWA assets are included -->
-      
-        <Content Include="wwwroot\offline.html" Condition="Exists('wwwroot\offline.html')" />
     </ItemGroup>
 
     <!-- Generate service worker assets manifest -->
