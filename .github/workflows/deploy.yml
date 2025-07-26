@@ -34,18 +34,23 @@ jobs:
           mkdir -p pages
           cp -r dist/wwwroot/* pages/
           
-          # Critical: Fix base href
+          # Fix base href
           sed -i 's|<base href="/" />|<base href="/Deployment/" />|g' pages/index.html
           
-          # Fix manifest reference
-          sed -i 's|href="manifest.json"|href="manifest.webmanifest"|g' pages/index.html
+          # Critical: Fix ALL manifest references
+          sed -i 's|href="manifest\.json"|href="manifest.webmanifest"|g' pages/index.html
+          sed -i 's|fetch('\''./manifest\.json'\'')|fetch('\''./manifest.webmanifest'\'')|g' pages/index.html
           
-          # Rename and fix manifest
+          # Rename manifest and fix paths
           if [ -f "pages/manifest.json" ]; then
             mv pages/manifest.json pages/manifest.webmanifest
-            # Fix manifest paths to match GitHub Pages
-            sed -i 's|"start_url": "/Deployment/"|"start_url": "/Deployment/"|g' pages/manifest.webmanifest
-            sed -i 's|"scope": "/Deployment/"|"scope": "/Deployment/"|g' pages/manifest.webmanifest
+            sed -i 's|"start_url": "/"|"start_url": "/Deployment/"|g' pages/manifest.webmanifest
+            sed -i 's|"scope": "/"|"scope": "/Deployment/"|g' pages/manifest.webmanifest
+          fi
+          
+          # Fix offline.html base href
+          if [ -f "pages/offline.html" ]; then
+            sed -i 's|<base href="/" />|<base href="/Deployment/" />|g' pages/offline.html
           fi
           
           # Use published service worker
